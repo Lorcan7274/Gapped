@@ -43,9 +43,20 @@ app.decorateRequest('player', null)
 
 /* --------------------------------------------------------------- routes */
 
+// Railway injects the commit it built from. Surfacing it here is the only
+// way to tell, from outside, whether a push actually reached production —
+// a failed build leaves the previous version live and looking perfectly fine.
+const BUILD = {
+  commit: (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || 'unknown',
+  branch: process.env.RAILWAY_GIT_BRANCH || 'unknown',
+  message: (process.env.RAILWAY_GIT_COMMIT_MESSAGE || '').split('\n')[0] || null,
+  startedAt: new Date().toISOString(),
+}
+
 app.get('/api/health', async () => ({
   ok: true,
   uptimeSeconds: Math.round(process.uptime()),
+  build: BUILD,
 }))
 
 // The hub is created before the routes so a join can push the new player
