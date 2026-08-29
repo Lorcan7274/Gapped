@@ -40,11 +40,11 @@ export default function ChallengeSheet() {
           <div className="relative">
             <span className="absolute inset-0 animate-ping-slow rounded-full bg-flare-500/30" />
             <span className="relative flex size-16 items-center justify-center rounded-full bg-ink-800 text-2xl font-black">
-              {incoming.from.handle.slice(0, 2).toUpperCase()}
+              {incoming.from.displayName.slice(0, 2).toUpperCase()}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xl font-bold">{incoming.from.handle}</span>
+            <span className="text-xl font-bold">{incoming.from.displayName}</span>
             <TierBadge tier={incoming.from.tier} />
           </div>
           <p className="nums text-sm text-ink-400">

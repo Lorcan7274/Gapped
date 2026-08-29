@@ -46,7 +46,7 @@ export default function ResultSheet() {
       <div className="grid w-full max-w-xs grid-cols-2 gap-4 rounded-3xl border border-ink-800 bg-ink-900 p-5">
         <Stat label="Your time" value={preciseClock(result.elapsedMs)} />
         <Stat
-          label={result.opponent.handle}
+          label={result.opponent.displayName}
           value={preciseClock(result.opponentElapsedMs)}
         />
       </div>

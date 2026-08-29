@@ -1,8 +1,9 @@
 # Gap
 
-A competitive platform for real-world running. Players join by phone, find each
-other by location and by skill rating, and challenge each other head-to-head in
-a live battle. ELO ratings, ranked tiers, and a leaderboard.
+A competitive platform for real-world running. Players join on their phone with
+a display name, find each other by location and by skill rating, and challenge
+each other head-to-head in a live battle. ELO ratings, ranked tiers, and a
+leaderboard.
 
 Full mobile web is the target.
 
@@ -22,10 +23,10 @@ server/            Fastify service
   index.js         HTTP + static + WebSocket upgrade
   db/              schema and data access (better-sqlite3)
   lib/             elo, geo, ids, validation, serializers
-  routes/          REST endpoints
+  routes/          REST endpoints (join, players, leaderboard)
   ws/              the live battle hub
 client/            Vite + React + Tailwind frontend
-  src/pages/       Login, Radar, Battle, Leaderboard, Profile
+  src/pages/       Join, Home, Radar, Battle, Leaderboard, Profile
   src/state/       session context, wraps the socket
   src/lib/         api client, socket, GPS tracker
 ```
@@ -46,9 +47,17 @@ npm run dev        # Fastify on :3000, restarts on change
 npm run dev:client # Vite on :5173
 ```
 
-There is no SMS provider wired up yet. Outside production the verification code
-comes back in the `/api/auth/request-code` response and the login screen shows
-it, so the flow is usable end to end.
+## Joining
+
+There are no passwords and no verification step. `POST /api/join` with a display
+name creates a player at a rating of 1000 and returns the record; the client
+keeps it in `localStorage`, so a reload goes straight to the home screen. The
+player id in that record is the credential for every later call, sent as the
+`x-player-id` header.
+
+Location is always optional. The browser is asked at join and again each time
+the home screen mounts, but a refusal still joins — coordinates are simply left
+null and that player does not appear on anyone's radar.
 
 ## Configuration
 
@@ -59,7 +68,7 @@ Copy `.env.example`. The two that matter for deployment:
 | `PORT` | `3000` | Railway injects this; we fall back to 3000 locally. |
 | `DATABASE_PATH` | `./data/gap.db` | The SQLite file. Point it at a mounted volume in production. |
 | `HOST` | `0.0.0.0` | |
-| `NODE_ENV` | `development` | Set to `production` to stop returning the dev login code. |
+| `NODE_ENV` | `production` on Railway | Only affects log verbosity now. |
 | `DISCOVERY_RADIUS_M` | `5000` | How far away an opponent can be. |
 | `DISCOVERY_RATING_SPREAD` | `250` | How far apart two ratings can be and still match. |
 | `PRESENCE_TTL_MS` | `90000` | How long since last contact still counts as online. |
@@ -90,9 +99,9 @@ your opponent.
 
 ### Ratings
 
-Standard ELO from 1200, with a higher K for a player's first ten races so new
-runners reach their real rating quickly. Tiers: Bronze, Silver (1100), Gold
-(1300), Platinum (1500), Diamond (1700), Apex (1900).
+Standard ELO from 1000, with a higher K for a player's first ten races so new
+runners reach their real rating quickly. Tiers: Bronze, Silver (900), Gold
+(1100), Platinum (1300), Diamond (1500), Apex (1700).
 
 ### GPS honesty
 
@@ -102,7 +111,9 @@ This is the obvious first line of defence, not a finished anti-cheat story.
 
 ## What is not built yet
 
-- An SMS provider. Logins are dev-code only.
+- Any real authentication. The player id from `localStorage` is the only
+  credential, so anyone holding it is that player. Fine for a private test,
+  not for public release.
 - Rematch, race history against a specific rival, friends.
 - Anything stronger than the GPS sanity checks above.
 - Tiers are cosmetic — no placement races or seasonal resets.

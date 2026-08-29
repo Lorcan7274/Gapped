@@ -5,14 +5,14 @@ import { clock, distanceLabel, signed } from '../lib/format.js'
 import { Button, Card, TierBadge, Stat, Spinner } from '../components/ui.jsx'
 
 export default function Profile() {
-  const { token, player, meta, signOut } = useSession()
+  const { player, meta, leave } = useSession()
   const [matches, setMatches] = useState(null)
 
   useEffect(() => {
-    api('/api/me/matches', { token })
+    api('/api/me/matches', { playerId: player.id })
       .then((data) => setMatches(data.matches))
       .catch(() => setMatches([]))
-  }, [token])
+  }, [player.id])
 
   if (!player) return null
 
@@ -24,7 +24,7 @@ export default function Profile() {
     <div className="flex flex-col gap-4 px-4 pb-28 pt-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-black tracking-tight">{player.handle}</h2>
+          <h2 className="text-2xl font-black tracking-tight">{player.displayName}</h2>
           <div className="mt-1.5 flex items-center gap-2">
             <TierBadge tier={player.tier} size="lg" />
             {player.rank && (
@@ -100,7 +100,7 @@ export default function Profile() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">
-                      vs {m.opponent.handle}
+                      vs {m.opponent.displayName}
                     </p>
                     <p className="nums text-xs text-ink-400">
                       {distanceLabel(m.distanceM)} · {clock(m.you.elapsedMs)}
@@ -122,8 +122,8 @@ export default function Profile() {
         </ul>
       )}
 
-      <Button variant="outline" onClick={signOut} className="mt-4">
-        Sign out
+      <Button variant="outline" onClick={leave} className="mt-4">
+        Leave
       </Button>
     </div>
   )

@@ -131,7 +131,7 @@ export default function Battle() {
             vs
           </p>
           <div className="flex items-center gap-2">
-            <span className="font-bold">{match.opponent.handle}</span>
+            <span className="font-bold">{match.opponent.displayName}</span>
             <TierBadge tier={match.opponent.tier} />
           </div>
         </div>
@@ -169,7 +169,7 @@ export default function Battle() {
               </p>
               <p className="mt-1 text-sm font-semibold uppercase tracking-wider text-ink-400">
                 {opponentFinished
-                  ? `${match.opponent.handle} has finished`
+                  ? `${match.opponent.displayName} has finished`
                   : leading
                     ? 'You are ahead'
                     : 'You are behind'}
@@ -184,7 +184,7 @@ export default function Battle() {
                 value={metres(mine)}
               />
               <Lane
-                label={match.opponent.handle}
+                label={match.opponent.displayName}
                 fraction={theirsFraction}
                 colour="bg-flare-500"
                 value={metres(opponentProgress)}

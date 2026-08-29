@@ -6,7 +6,7 @@ import { metres, distanceLabel, ago } from '../lib/format.js'
 import { Button, Card, TierBadge, Spinner, EmptyState } from '../components/ui.jsx'
 
 export default function Radar() {
-  const { token, player, meta, send, outgoing, setOutgoing } = useSession()
+  const { player, meta, send, outgoing, setOutgoing, pushLocation } = useSession()
   const [opponents, setOpponents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -15,7 +15,7 @@ export default function Radar() {
 
   const load = useCallback(async () => {
     try {
-      const data = await api('/api/players/nearby', { token })
+      const data = await api('/api/players/nearby', { playerId: player.id })
       setOpponents(data.players)
       setError(null)
     } catch (err) {
@@ -24,7 +24,7 @@ export default function Radar() {
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [player.id])
 
   useEffect(() => {
     load()
@@ -37,9 +37,7 @@ export default function Radar() {
     setLocating(true)
     setError(null)
     try {
-      const { lat, lng } = await getCurrentPosition()
-      await api('/api/me/location', { method: 'POST', token, body: { lat, lng } })
-      send('location', { lat, lng })
+      await pushLocation(await getCurrentPosition())
       await load()
     } catch (err) {
       setError(new Error(err.message || 'Could not read your location.'))
@@ -73,7 +71,7 @@ export default function Radar() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-volt-400">
-                Challenge sent to {outgoing.opponent.handle}
+                Challenge sent to {outgoing.opponent.displayName}
               </p>
               <p className="nums text-xs text-ink-400">
                 {distanceLabel(outgoing.distanceM)} · waiting for them to accept
@@ -140,7 +138,7 @@ export default function Radar() {
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="truncate font-bold">{opponent.handle}</span>
+                      <span className="truncate font-bold">{opponent.displayName}</span>
                       <TierBadge tier={opponent.tier} />
                     </div>
                     <p className="nums mt-0.5 text-xs text-ink-400">

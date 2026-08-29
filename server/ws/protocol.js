@@ -25,6 +25,7 @@ export const SERVER = {
   MATCH_TICK: 'match:tick',
   MATCH_END: 'match:end',
   PRESENCE: 'presence',
+  PLAYERS: 'players',
 }
 
 export function encode(type, payload = {}) {

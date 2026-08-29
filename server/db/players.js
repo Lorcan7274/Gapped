@@ -3,38 +3,41 @@ import { newId } from '../lib/ids.js'
 import { STARTING_RATING } from '../lib/elo.js'
 import { boundingBox, distanceMetres } from '../lib/geo.js'
 
-const PUBLIC_COLUMNS = `
-  id, handle, rating, peak_rating, games, wins, losses, draws,
+const COLUMNS = `
+  id, display_name, rating, peak_rating, games, wins, losses, draws,
   lat, lng, located_at, last_seen_at, created_at
 `
 
-const selectById = db.prepare(`SELECT ${PUBLIC_COLUMNS} FROM players WHERE id = ?`)
-const selectByPhone = db.prepare('SELECT * FROM players WHERE phone = ?')
-const selectByHandle = db.prepare('SELECT id FROM players WHERE handle = ? COLLATE NOCASE')
+const selectById = db.prepare(`SELECT ${COLUMNS} FROM players WHERE id = ?`)
 
 const insertPlayer = db.prepare(`
-  INSERT INTO players (id, phone, handle, rating, peak_rating, created_at, last_seen_at)
-  VALUES (@id, @phone, @handle, @rating, @rating, @created_at, @created_at)
+  INSERT INTO players
+    (id, display_name, rating, peak_rating, lat, lng, located_at, created_at, last_seen_at)
+  VALUES
+    (@id, @display_name, @rating, @rating, @lat, @lng, @located_at, @created_at, @created_at)
 `)
 
 const updateLocation = db.prepare(`
   UPDATE players SET lat = ?, lng = ?, located_at = ?, last_seen_at = ? WHERE id = ?
 `)
-
 const touch = db.prepare('UPDATE players SET last_seen_at = ? WHERE id = ?')
+const rename = db.prepare('UPDATE players SET display_name = ? WHERE id = ?')
 
-const updateHandle = db.prepare('UPDATE players SET handle = ? WHERE id = ?')
+export const getPlayer = (id) => (id ? selectById.get(id) ?? null : null)
 
-export const getPlayer = (id) => selectById.get(id) ?? null
-export const getPlayerByPhone = (phone) => selectByPhone.get(phone) ?? null
-export const handleTaken = (handle) => Boolean(selectByHandle.get(handle))
-
-export function createPlayer({ phone, handle }) {
+/**
+ * Create a player from a display name. Coordinates are optional — a browser
+ * that denies location still joins, just without a position.
+ */
+export function createPlayer({ displayName, lat = null, lng = null }) {
+  const hasCoords = lat != null && lng != null
   const player = {
     id: newId(),
-    phone,
-    handle,
+    display_name: displayName,
     rating: STARTING_RATING,
+    lat: hasCoords ? lat : null,
+    lng: hasCoords ? lng : null,
+    located_at: hasCoords ? now() : null,
     created_at: now(),
   }
   insertPlayer.run(player)
@@ -48,55 +51,22 @@ export function setLocation(id, lat, lng) {
 }
 
 export const touchPlayer = (id) => touch.run(now(), id)
-
-export function renamePlayer(id, handle) {
-  updateHandle.run(handle, id)
+export function renamePlayer(id, displayName) {
+  rename.run(displayName, id)
   return getPlayer(id)
 }
 
-/**
- * Opponents near `player`, ranked by how good a match they are.
- * Filtered on distance and rating gap; sorted by rating gap, then distance.
- */
-export function findNearby(player, { radiusM, ratingSpread, presenceTtlMs, limit = 40 }) {
-  if (player.lat == null || player.lng == null) return []
-
-  const box = boundingBox(player.lat, player.lng, radiusM)
-  const rows = db
-    .prepare(
-      `SELECT ${PUBLIC_COLUMNS} FROM players
-       WHERE id != @id
-         AND lat IS NOT NULL AND lng IS NOT NULL
-         AND lat BETWEEN @minLat AND @maxLat
-         AND lng BETWEEN @minLng AND @maxLng
-         AND last_seen_at >= @since
-         AND rating BETWEEN @minRating AND @maxRating`
-    )
-    .all({
-      id: player.id,
-      ...box,
-      since: now() - presenceTtlMs,
-      minRating: player.rating - ratingSpread,
-      maxRating: player.rating + ratingSpread,
-    })
-
-  return rows
-    .map((row) => ({
-      ...row,
-      distance_m: Math.round(
-        distanceMetres(player.lat, player.lng, row.lat, row.lng)
-      ),
-      rating_gap: Math.abs(row.rating - player.rating),
-    }))
-    .filter((row) => row.distance_m <= radiusM)
-    .sort((x, y) => x.rating_gap - y.rating_gap || x.distance_m - y.distance_m)
-    .slice(0, limit)
+/** Everyone who has joined, most recently active first. */
+export function allPlayers({ limit = 200 } = {}) {
+  return db
+    .prepare(`SELECT ${COLUMNS} FROM players ORDER BY last_seen_at DESC, created_at DESC LIMIT ?`)
+    .all(limit)
 }
 
-export function leaderboard({ limit = 50, offset = 0 } = {}) {
+export function leaderboard({ limit = 100, offset = 0 } = {}) {
   return db
     .prepare(
-      `SELECT ${PUBLIC_COLUMNS} FROM players
+      `SELECT ${COLUMNS} FROM players
        WHERE games > 0
        ORDER BY rating DESC, wins DESC, id ASC
        LIMIT ? OFFSET ?`
@@ -113,4 +83,36 @@ export function rankOf(playerId) {
     )
     .get(playerId)
   return row?.rank ?? null
+}
+
+/** Opponents near a player, filtered on distance and rating gap. */
+export function findNearby(player, { radiusM, ratingSpread, presenceTtlMs, limit = 40 }) {
+  if (player.lat == null || player.lng == null) return []
+
+  const box = boundingBox(player.lat, player.lng, radiusM)
+  return db
+    .prepare(
+      `SELECT ${COLUMNS} FROM players
+       WHERE id != @id
+         AND lat IS NOT NULL AND lng IS NOT NULL
+         AND lat BETWEEN @minLat AND @maxLat
+         AND lng BETWEEN @minLng AND @maxLng
+         AND last_seen_at >= @since
+         AND rating BETWEEN @minRating AND @maxRating`
+    )
+    .all({
+      id: player.id,
+      ...box,
+      since: now() - presenceTtlMs,
+      minRating: player.rating - ratingSpread,
+      maxRating: player.rating + ratingSpread,
+    })
+    .map((row) => ({
+      ...row,
+      distance_m: Math.round(distanceMetres(player.lat, player.lng, row.lat, row.lng)),
+      rating_gap: Math.abs(row.rating - player.rating),
+    }))
+    .filter((row) => row.distance_m <= radiusM)
+    .sort((x, y) => x.rating_gap - y.rating_gap || x.distance_m - y.distance_m)
+    .slice(0, limit)
 }

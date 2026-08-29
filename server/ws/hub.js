@@ -1,11 +1,11 @@
 import { WebSocketServer } from 'ws'
 import { CLIENT, SERVER, encode, decode } from './protocol.js'
-import { resolveSession } from '../db/auth.js'
 import {
   getPlayer,
   setLocation,
   touchPlayer,
   rankOf,
+  allPlayers,
 } from '../db/players.js'
 import {
   createChallenge,
@@ -22,8 +22,8 @@ import {
   abandon,
 } from '../db/matches.js'
 import { publicPlayer, selfPlayer } from '../lib/serialize.js'
-import { isValidCoord, distanceMetres } from '../lib/geo.js'
-import { normaliseDistance } from '../lib/validate.js'
+import { distanceMetres } from '../lib/geo.js'
+import { normaliseDistance, normaliseCoords } from '../lib/validate.js'
 import { DISCOVERY_RADIUS_M, PRESENCE_TTL_MS } from '../config.js'
 import { db } from '../db/index.js'
 
@@ -83,6 +83,30 @@ export function createHub(log) {
   const fail = (socket, message, requestId) =>
     send(socket, SERVER.ERROR, { message, id: requestId ?? null })
 
+  /**
+   * Push the full player list to everyone connected. Each socket gets the
+   * list rendered from its own viewer's perspective, so distances are
+   * relative to the person reading them. Called whenever anyone joins,
+   * moves, renames, connects or disconnects.
+   */
+  function broadcastPlayers() {
+    const rows = allPlayers()
+    for (const [playerId, set] of sockets) {
+      const viewer = getPlayer(playerId)
+      if (!viewer) continue
+      const payload = encode(SERVER.PLAYERS, {
+        players: rows.map((row) => publicPlayer(row, viewer, {
+          online: sockets.has(row.id),
+          isYou: row.id === playerId,
+        })),
+        count: rows.length,
+      })
+      for (const socket of set) {
+        if (socket.readyState === socket.OPEN) socket.send(payload)
+      }
+    }
+  }
+
   /* -------------------------------------------------------------- matches */
 
   function sideOf(match, playerId) {
@@ -136,7 +160,7 @@ export function createHub(log) {
       })
     }
 
-    log.info({ matchId: match.id, a: a.handle, b: b.handle }, 'match started')
+    log.info({ matchId: match.id, a: a.display_name, b: b.display_name }, 'match started')
     return match
   }
 
@@ -205,12 +229,12 @@ export function createHub(log) {
     },
 
     [CLIENT.LOCATION](ctx) {
-      const lat = Number(ctx.msg.lat)
-      const lng = Number(ctx.msg.lng)
-      if (!isValidCoord(lat, lng)) {
-        return fail(ctx.socket, 'Invalid coordinates.', ctx.msg.id)
-      }
-      setLocation(ctx.playerId, lat, lng)
+      const coords = normaliseCoords(ctx.msg.lat, ctx.msg.lng)
+      // A client that could not get a fix simply sends nothing usable; that
+      // is not an error worth surfacing to the player.
+      if (!coords) return
+      setLocation(ctx.playerId, coords.lat, coords.lng)
+      broadcastPlayers()
     },
 
     [CLIENT.CHALLENGE](ctx) {
@@ -244,13 +268,13 @@ export function createHub(log) {
       send(socket, SERVER.CHALLENGE_SENT, {
         id: msg.id ?? null,
         challengeId: challenge.id,
-        opponent: publicPlayer(them),
+        opponent: publicPlayer(them, me),
         distanceM,
         expiresAt: challenge.expires_at,
       })
       sendTo(opponentId, SERVER.CHALLENGE_INCOMING, {
         challengeId: challenge.id,
-        from: publicPlayer({ ...me, distance_m: Math.round(apart) }),
+        from: publicPlayer({ ...me, distance_m: Math.round(apart) }, them),
         distanceM,
         expiresAt: challenge.expires_at,
       })
@@ -383,6 +407,10 @@ export function createHub(log) {
       presenceTtlMs: PRESENCE_TTL_MS,
     })
 
+    // The new arrival needs the list, and everyone else needs to see them
+    // come online.
+    broadcastPlayers()
+
     socket.on('pong', () => {
       socket.isAlive = true
     })
@@ -403,6 +431,7 @@ export function createHub(log) {
     socket.on('close', () => {
       unregister(playerId, socket)
       if (isOnline(playerId)) return
+      broadcastPlayers()
       const current = getLiveMatchFor(playerId)
       if (current) armForfeit(current, playerId)
     })
@@ -438,12 +467,14 @@ export function createHub(log) {
       return
     }
 
-    const token =
-      url.searchParams.get('token') ||
+    // The player id from localStorage is the credential. A stale one (the
+    // database was reset, say) is refused so the client can clear it and
+    // send the person back to the join screen.
+    const playerId =
+      url.searchParams.get('playerId') ||
       request.headers['sec-websocket-protocol'] ||
       ''
-    const session = resolveSession(token)
-    const player = session ? getPlayer(session.player_id) : null
+    const player = getPlayer(playerId)
 
     if (!player) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
@@ -478,5 +509,5 @@ export function createHub(log) {
     }
   }
 
-  return { wss, handleUpgrade, close, reconcileOnBoot, isOnline, sendTo }
+  return { wss, handleUpgrade, close, reconcileOnBoot, isOnline, sendTo, broadcastPlayers }
 }

@@ -56,7 +56,7 @@ export default function Leaderboard() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate font-semibold">{row.handle}</span>
+                    <span className="truncate font-semibold">{row.displayName}</span>
                     {isMe && (
                       <span className="text-[10px] font-bold uppercase tracking-wider text-surge-400">
                         you

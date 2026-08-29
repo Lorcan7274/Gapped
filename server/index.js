@@ -5,9 +5,9 @@ import Fastify from 'fastify'
 import fastifyStatic from '@fastify/static'
 
 import { PORT, HOST, DATABASE_PATH, IS_PRODUCTION } from './config.js'
-import { resolveSession, purgeExpiredSessions } from './db/auth.js'
+import { MIGRATED } from './db/index.js'
 import { getPlayer, touchPlayer } from './db/players.js'
-import authRoutes from './routes/auth.js'
+import joinRoutes from './routes/join.js'
 import playerRoutes from './routes/players.js'
 import { createHub } from './ws/hub.js'
 
@@ -22,22 +22,24 @@ const app = Fastify({
   trustProxy: true,
 })
 
-/* ----------------------------------------------------------------- auth */
+/* --------------------------------------------------------------- identity */
 
-// Attaches request.player, or 401s. Bearer token issued by /api/auth/verify.
-app.decorate('requireAuth', async (request, reply) => {
-  const token = request.headers.authorization?.replace(/^Bearer\s+/i, '')
-  const session = resolveSession(token)
-  const player = session ? getPlayer(session.player_id) : null
+// The player id handed back at join — kept in localStorage by the client —
+// is the credential. It arrives as the x-player-id header, or as playerId in
+// the body for convenience. A 404 (not 401) tells the client the id is dead
+// and it should clear storage and show the join screen again.
+app.decorate('requirePlayer', async (request, reply) => {
+  const id = request.headers['x-player-id'] || request.body?.playerId
+  const player = getPlayer(id)
   if (!player) {
-    return reply.code(401).send({ error: 'Sign in to continue.' })
+    return reply
+      .code(404)
+      .send({ error: 'That player no longer exists. Join again.', code: 'unknown_player' })
   }
   touchPlayer(player.id)
   request.player = player
-  request.sessionToken = token
 })
 app.decorateRequest('player', null)
-app.decorateRequest('sessionToken', null)
 
 /* --------------------------------------------------------------- routes */
 
@@ -46,7 +48,11 @@ app.get('/api/health', async () => ({
   uptimeSeconds: Math.round(process.uptime()),
 }))
 
-await app.register(authRoutes)
+// The hub is created before the routes so a join can push the new player
+// list straight out over the sockets.
+const hub = createHub(app.log)
+
+await app.register(joinRoutes(() => hub.broadcastPlayers()))
 await app.register(playerRoutes)
 
 /* ------------------------------------------------- static Vite frontend */
@@ -75,7 +81,6 @@ if (fs.existsSync(clientDist)) {
 
 /* ------------------------------------------------------------ websockets */
 
-const hub = createHub(app.log)
 hub.reconcileOnBoot()
 
 // Fastify owns the HTTP server; we take the raw upgrade for /ws ourselves.
@@ -85,12 +90,8 @@ app.server.on('upgrade', (request, socket, head) => {
 
 /* -------------------------------------------------------------- startup */
 
-const housekeeping = setInterval(purgeExpiredSessions, 3_600_000)
-housekeeping.unref()
-
 async function shutdown(signal) {
   app.log.info({ signal }, 'shutting down')
-  clearInterval(housekeeping)
   hub.close()
   await app.close()
   process.exit(0)
@@ -100,6 +101,7 @@ process.on('SIGINT', () => shutdown('SIGINT'))
 
 try {
   await app.listen({ port: PORT, host: HOST })
+  if (MIGRATED) app.log.warn('database was migrated off the phone-login schema')
   app.log.info({ port: PORT, database: DATABASE_PATH }, 'gap is up')
 } catch (error) {
   app.log.error(error, 'failed to start')

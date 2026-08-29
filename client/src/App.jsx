@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSession } from './state/session.jsx'
-import Login from './pages/Login.jsx'
+import Join from './pages/Join.jsx'
+import Home from './pages/Home.jsx'
 import Radar from './pages/Radar.jsx'
 import Battle from './pages/Battle.jsx'
 import Leaderboard from './pages/Leaderboard.jsx'
@@ -10,6 +11,7 @@ import ResultSheet from './components/ResultSheet.jsx'
 import { Spinner, ConnectionDot } from './components/ui.jsx'
 
 const TABS = [
+  { key: 'home', label: 'Home', icon: '🏠' },
   { key: 'radar', label: 'Nearby', icon: '📡' },
   { key: 'leaderboard', label: 'Ranks', icon: '🏆' },
   { key: 'profile', label: 'You', icon: '👤' },
@@ -17,7 +19,7 @@ const TABS = [
 
 export default function App() {
   const { status, connection, match, notice, setNotice } = useSession()
-  const [tab, setTab] = useState('radar')
+  const [tab, setTab] = useState('home')
 
   // Notices are transient; clear them so they do not pile up.
   useEffect(() => {
@@ -34,7 +36,7 @@ export default function App() {
     )
   }
 
-  if (status === 'anonymous') return <Login />
+  if (status === 'anonymous') return <Join />
 
   // A live race takes over the whole screen — nothing else matters mid-race.
   if (match) {
@@ -67,6 +69,7 @@ export default function App() {
       )}
 
       <main className="flex-1">
+        {tab === 'home' && <Home />}
         {tab === 'radar' && <Radar />}
         {tab === 'leaderboard' && <Leaderboard />}
         {tab === 'profile' && <Profile />}

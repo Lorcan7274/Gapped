@@ -1,224 +1,187 @@
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from 'react'
-import { api, readToken, writeToken } from '../lib/api.js'
+import { api, readPlayer, writePlayer } from '../lib/api.js'
 import { createSocket } from '../lib/socket.js'
 
 const SessionContext = createContext(null)
 
 export function SessionProvider({ children }) {
-  const [token, setToken] = useState(readToken)
-  const [player, setPlayer] = useState(null)
-  const [meta, setMeta] = useState(null)
+  const [player, setPlayer] = useState(readPlayer)
   const [status, setStatus] = useState('idle')
   const [connection, setConnection] = useState('closed')
+  const [players, setPlayers] = useState([])
+  const [meta, setMeta] = useState(null)
+  const [notice, setNotice] = useState(null)
 
-  // Live-battle state, driven entirely by socket frames.
-  const [incoming, setIncoming] = useState(null) // challenge aimed at us
-  const [outgoing, setOutgoing] = useState(null) // challenge we sent
+  // Live-race state, unchanged in shape from the socket's point of view.
+  const [incoming, setIncoming] = useState(null)
+  const [outgoing, setOutgoing] = useState(null)
   const [match, setMatch] = useState(null)
   const [result, setResult] = useState(null)
   const [opponentProgress, setOpponentProgress] = useState(0)
   const [opponentFinished, setOpponentFinished] = useState(false)
-  const [notice, setNotice] = useState(null)
 
   const socketRef = useRef(null)
+  const playerId = player?.id ?? null
 
-  /* ------------------------------------------------------------ bootstrap */
+  /* -------------------------------------------------------------- bootstrap */
 
   useEffect(() => {
     api('/api/meta').then(setMeta).catch(() => {})
   }, [])
 
+  // Revalidate the stored player on boot. A 404 means the id is dead (the
+  // database was reset, say) so we clear it rather than hang on a dead id.
+  const forget = useCallback(() => {
+    writePlayer(null)
+    setPlayer(null)
+    setPlayers([])
+    setStatus('anonymous')
+  }, [])
+
   useEffect(() => {
-    if (!token) {
-      setPlayer(null)
+    if (!playerId) {
       setStatus('anonymous')
       return
     }
     let cancelled = false
     setStatus('loading')
-    api('/api/me', { token })
+    api('/api/me', { playerId })
       .then((data) => {
         if (cancelled) return
         setPlayer(data.player)
+        writePlayer(data.player)
         setStatus('ready')
       })
-      .catch(() => {
+      .catch((err) => {
         if (cancelled) return
-        writeToken(null)
-        setToken(null)
-        setStatus('anonymous')
+        if (err.isUnknownPlayer) forget()
+        // A network blip should not sign you out — keep the stored player and
+        // let the socket's own reconnection handle it.
+        else setStatus('ready')
       })
     return () => {
       cancelled = true
     }
-  }, [token])
+  }, [playerId, forget])
 
-  /* --------------------------------------------------------------- socket */
+  /* ----------------------------------------------------------------- socket */
 
   const onMessage = useCallback((frame) => {
     switch (frame.type) {
       case 'ready':
-        setPlayer(frame.player)
+        setPlayer((prev) => {
+          const next = { ...prev, ...frame.player }
+          writePlayer(next)
+          return next
+        })
         break
-
+      case 'players':
+        setPlayers(frame.players)
+        break
       case 'error':
         setNotice({ tone: 'bad', text: frame.message })
         break
-
       case 'challenge:sent':
-        setOutgoing({
-          challengeId: frame.challengeId,
-          opponent: frame.opponent,
-          distanceM: frame.distanceM,
-          expiresAt: frame.expiresAt,
-        })
+        setOutgoing({ challengeId: frame.challengeId, opponent: frame.opponent, distanceM: frame.distanceM, expiresAt: frame.expiresAt })
         break
-
       case 'challenge:incoming':
-        setIncoming({
-          challengeId: frame.challengeId,
-          from: frame.from,
-          distanceM: frame.distanceM,
-          expiresAt: frame.expiresAt,
-        })
+        setIncoming({ challengeId: frame.challengeId, from: frame.from, distanceM: frame.distanceM, expiresAt: frame.expiresAt })
         break
-
       case 'challenge:declined':
         setOutgoing(null)
-        setNotice({ tone: 'bad', text: `${frame.by.handle} turned it down.` })
+        setNotice({ tone: 'bad', text: `${frame.by.displayName} turned it down.` })
         break
-
       case 'challenge:cancelled':
         setIncoming(null)
         break
-
       case 'challenge:expired':
-        setIncoming(null)
-        setOutgoing(null)
+        setIncoming(null); setOutgoing(null)
         break
-
       case 'match:start':
-        setIncoming(null)
-        setOutgoing(null)
-        setResult(null)
-        setOpponentProgress(0)
-        setOpponentFinished(false)
-        setMatch({
-          id: frame.matchId,
-          distanceM: frame.distanceM,
-          startsAt: frame.startsAt,
-          opponent: frame.opponent,
-        })
+        setIncoming(null); setOutgoing(null); setResult(null)
+        setOpponentProgress(0); setOpponentFinished(false)
+        setMatch({ id: frame.matchId, distanceM: frame.distanceM, startsAt: frame.startsAt, opponent: frame.opponent })
         break
-
       case 'match:tick':
         setOpponentProgress(frame.progressM)
         if (frame.finished) setOpponentFinished(true)
         break
-
       case 'match:end':
         setMatch(null)
         setPlayer(frame.player)
+        writePlayer(frame.player)
         setResult({
-          matchId: frame.matchId,
-          outcome: frame.outcome,
-          reason: frame.reason,
-          ratingBefore: frame.ratingBefore,
-          ratingAfter: frame.ratingAfter,
-          elapsedMs: frame.elapsedMs,
-          opponentElapsedMs: frame.opponentElapsedMs,
+          matchId: frame.matchId, outcome: frame.outcome, reason: frame.reason,
+          ratingBefore: frame.ratingBefore, ratingAfter: frame.ratingAfter,
+          elapsedMs: frame.elapsedMs, opponentElapsedMs: frame.opponentElapsedMs,
           opponent: frame.opponent,
         })
         break
-
       default:
         break
     }
   }, [])
 
   useEffect(() => {
-    if (!token || status !== 'ready') return
-    const socket = createSocket({ token, onMessage, onStatus: setConnection })
+    if (!playerId || status !== 'ready') return
+    const socket = createSocket({
+      playerId,
+      onMessage,
+      onStatus: setConnection,
+      onDeadPlayer: forget,
+    })
     socketRef.current = socket
     return () => {
       socket.close()
       socketRef.current = null
       setConnection('closed')
     }
-  }, [token, status, onMessage])
+  }, [playerId, status, onMessage, forget])
 
-  const send = useCallback((type, payload) => {
-    return socketRef.current?.send(type, payload) ?? false
-  }, [])
+  const send = useCallback((type, payload) => socketRef.current?.send(type, payload) ?? false, [])
 
-  /* --------------------------------------------------------------- actions */
+  /* ---------------------------------------------------------------- actions */
 
-  const signIn = useCallback((nextToken, nextPlayer) => {
-    writeToken(nextToken)
-    setToken(nextToken)
-    setPlayer(nextPlayer)
+  const join = useCallback(async (displayName, coords) => {
+    const { player: joined } = await api('/api/join', {
+      method: 'POST',
+      body: { displayName, lat: coords?.lat ?? null, lng: coords?.lng ?? null },
+    })
+    writePlayer(joined)
+    setPlayer(joined)
     setStatus('ready')
+    return joined
   }, [])
 
-  const signOut = useCallback(async () => {
+  /** Push a position. Silently does nothing useful if location was denied. */
+  const pushLocation = useCallback(async (coords) => {
+    if (!playerId || !coords) return null
+    const { player: updated } = await api('/api/location', {
+      method: 'POST', playerId, body: coords,
+    })
+    setPlayer(updated)
+    writePlayer(updated)
+    send('location', coords)
+    return updated
+  }, [playerId, send])
+
+  const leave = useCallback(() => {
     socketRef.current?.close()
-    try {
-      await api('/api/auth/logout', { method: 'POST', token })
-    } catch {
-      /* the local session is going away regardless */
-    }
-    writeToken(null)
-    setToken(null)
-    setPlayer(null)
-    setMatch(null)
-    setResult(null)
-    setStatus('anonymous')
-  }, [token])
+    forget()
+  }, [forget])
 
-  const refresh = useCallback(async () => {
-    if (!token) return
-    const data = await api('/api/me', { token })
-    setPlayer(data.player)
-    return data
-  }, [token])
-
-  const value = useMemo(
-    () => ({
-      token,
-      player,
-      meta,
-      status,
-      connection,
-      incoming,
-      outgoing,
-      match,
-      result,
-      opponentProgress,
-      opponentFinished,
-      notice,
-      send,
-      signIn,
-      signOut,
-      refresh,
-      setNotice,
-      setOutgoing,
-      setIncoming,
-      clearResult: () => setResult(null),
-    }),
-    [
-      token, player, meta, status, connection, incoming, outgoing, match,
-      result, opponentProgress, opponentFinished, notice, send, signIn,
-      signOut, refresh,
-    ]
-  )
+  const value = useMemo(() => ({
+    player, players, meta, status, connection, notice,
+    incoming, outgoing, match, result, opponentProgress, opponentFinished,
+    join, leave, pushLocation, send, setNotice, setOutgoing, setIncoming,
+    clearResult: () => setResult(null),
+  }), [
+    player, players, meta, status, connection, notice, incoming, outgoing,
+    match, result, opponentProgress, opponentFinished, join, leave,
+    pushLocation, send,
+  ])
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
 }

@@ -1,19 +1,28 @@
-// Normalise to E.164-ish: a leading + and 8-15 digits. We deliberately do not
-// try to be a full phone-number library here.
-export function normalisePhone(input) {
+// Display names are shown to other players, so we collapse runs of whitespace
+// and cap the length, but otherwise let people call themselves what they like.
+// Names are not unique — the player id is the identity.
+export function normaliseDisplayName(input) {
   if (typeof input !== 'string') return null
-  const trimmed = input.trim()
-  const digits = trimmed.replace(/[^\d]/g, '')
-  if (digits.length < 8 || digits.length > 15) return null
-  return trimmed.startsWith('+') ? `+${digits}` : `+${digits}`
+  const collapsed = input.replace(/\s+/g, ' ').trim()
+  if (collapsed.length < 2 || collapsed.length > 24) return null
+  // Reject control characters, which would let a name break the UI.
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(collapsed)) return null
+  return collapsed
 }
 
-const HANDLE_RE = /^[a-z0-9_]{3,16}$/i
-
-export function normaliseHandle(input) {
-  if (typeof input !== 'string') return null
-  const trimmed = input.trim()
-  return HANDLE_RE.test(trimmed) ? trimmed : null
+// Coordinates are optional everywhere: a denied permission is not an error.
+export function normaliseCoords(lat, lng) {
+  // Number(null) and Number('') are both 0, which would silently place a
+  // player who denied location at Null Island and make everyone "nearby".
+  if (lat == null || lng == null || lat === '' || lng === '') return null
+  const parsedLat = Number(lat)
+  const parsedLng = Number(lng)
+  const usable =
+    Number.isFinite(parsedLat) && Number.isFinite(parsedLng) &&
+    parsedLat >= -90 && parsedLat <= 90 &&
+    parsedLng >= -180 && parsedLng <= 180
+  return usable ? { lat: parsedLat, lng: parsedLng } : null
 }
 
 // Race distances players can pick, in metres.
@@ -24,7 +33,4 @@ export function normaliseDistance(input) {
   return DISTANCES.includes(n) ? n : null
 }
 
-export function suggestHandle(phone) {
-  const tail = phone.slice(-4)
-  return `runner${tail}${String(Math.floor(Math.random() * 90) + 10)}`
-}
+

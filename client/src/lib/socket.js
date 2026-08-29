@@ -1,8 +1,9 @@
 /**
- * A thin auto-reconnecting wrapper around the browser WebSocket.
- * Same origin as the page, so the URL is derived from location.
+ * Auto-reconnecting WebSocket keyed on the stored player id.
+ * Mobile data drops constantly, so reconnection is the normal case, not an
+ * error path: we back off, jitter, and resume with the same id.
  */
-export function createSocket({ token, onMessage, onStatus }) {
+export function createSocket({ playerId, onMessage, onStatus, onDeadPlayer }) {
   let ws = null
   let attempt = 0
   let heartbeat = null
@@ -11,7 +12,7 @@ export function createSocket({ token, onMessage, onStatus }) {
 
   const url = () => {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
-    return `${scheme}://${location.host}/ws?token=${encodeURIComponent(token)}`
+    return `${scheme}://${location.host}/ws?playerId=${encodeURIComponent(playerId)}`
   }
 
   function connect() {
@@ -23,7 +24,6 @@ export function createSocket({ token, onMessage, onStatus }) {
       attempt = 0
       onStatus('open')
       clearInterval(heartbeat)
-      // Keeps presence fresh and stops idle proxies closing the socket.
       heartbeat = setInterval(() => send('ping'), 25_000)
     }
 
@@ -35,11 +35,19 @@ export function createSocket({ token, onMessage, onStatus }) {
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       clearInterval(heartbeat)
       if (closedByUs) return onStatus('closed')
+
+      // 1008 is what the server sends when it does not know this player —
+      // reconnecting forever with a dead id would spin.
+      if (event.code === 1008) {
+        onStatus('rejected')
+        onDeadPlayer?.()
+        return
+      }
+
       onStatus('offline')
-      // Exponential backoff, capped, with jitter so reconnects do not sync up.
       const delay = Math.min(1000 * 2 ** attempt, 15_000)
       attempt += 1
       reconnectTimer = setTimeout(connect, delay + Math.random() * 500)

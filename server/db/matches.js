@@ -179,7 +179,7 @@ export function abandon(matchId) {
 export function recentMatchesFor(playerId, limit = 20) {
   return db
     .prepare(
-      `SELECT m.*, pa.handle AS a_handle, pb.handle AS b_handle
+      `SELECT m.*, pa.display_name AS a_name, pb.display_name AS b_name
        FROM matches m
        JOIN players pa ON pa.id = m.a_id
        JOIN players pb ON pb.id = m.b_id

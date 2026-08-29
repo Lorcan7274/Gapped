@@ -1,16 +1,19 @@
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
+-- A player is created by joining with a display name. There is no password
+-- and no verification step: the id returned at join is the credential, and
+-- the client keeps it in localStorage.
 CREATE TABLE IF NOT EXISTS players (
   id                TEXT PRIMARY KEY,
-  phone             TEXT NOT NULL UNIQUE,
-  handle            TEXT NOT NULL UNIQUE,
-  rating            INTEGER NOT NULL DEFAULT 1200,
-  peak_rating       INTEGER NOT NULL DEFAULT 1200,
+  display_name      TEXT NOT NULL,
+  rating            INTEGER NOT NULL DEFAULT 1000,
+  peak_rating       INTEGER NOT NULL DEFAULT 1000,
   games             INTEGER NOT NULL DEFAULT 0,
   wins              INTEGER NOT NULL DEFAULT 0,
   losses            INTEGER NOT NULL DEFAULT 0,
   draws             INTEGER NOT NULL DEFAULT 0,
+  -- Null until the browser grants location. Denial must never block a join.
   lat               REAL,
   lng               REAL,
   located_at        INTEGER,
@@ -21,29 +24,11 @@ CREATE TABLE IF NOT EXISTS players (
 CREATE INDEX IF NOT EXISTS idx_players_rating   ON players (rating DESC);
 CREATE INDEX IF NOT EXISTS idx_players_location ON players (lat, lng);
 
-CREATE TABLE IF NOT EXISTS auth_codes (
-  phone       TEXT PRIMARY KEY,
-  code        TEXT NOT NULL,
-  expires_at  INTEGER NOT NULL,
-  attempts    INTEGER NOT NULL DEFAULT 0,
-  created_at  INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS sessions (
-  token       TEXT PRIMARY KEY,
-  player_id   TEXT NOT NULL REFERENCES players (id) ON DELETE CASCADE,
-  created_at  INTEGER NOT NULL,
-  expires_at  INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_sessions_player ON sessions (player_id);
-
 CREATE TABLE IF NOT EXISTS challenges (
   id            TEXT PRIMARY KEY,
   from_id       TEXT NOT NULL REFERENCES players (id) ON DELETE CASCADE,
   to_id         TEXT NOT NULL REFERENCES players (id) ON DELETE CASCADE,
   distance_m    INTEGER NOT NULL,
-  -- pending | accepted | declined | cancelled | expired
   status        TEXT NOT NULL DEFAULT 'pending',
   created_at    INTEGER NOT NULL,
   expires_at    INTEGER NOT NULL,
@@ -59,7 +44,6 @@ CREATE TABLE IF NOT EXISTS matches (
   a_id            TEXT NOT NULL REFERENCES players (id) ON DELETE CASCADE,
   b_id            TEXT NOT NULL REFERENCES players (id) ON DELETE CASCADE,
   distance_m      INTEGER NOT NULL,
-  -- live | finished | abandoned
   status          TEXT NOT NULL DEFAULT 'live',
   winner_id       TEXT REFERENCES players (id) ON DELETE SET NULL,
   a_rating_before INTEGER NOT NULL,

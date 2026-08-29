@@ -1,14 +1,14 @@
-export const STARTING_RATING = 1200
+export const STARTING_RATING = 1000
 export const RATING_FLOOR = 100
 
 // Ranked tiers. Ordered low to high; `floor` is inclusive.
 export const TIERS = [
   { key: 'bronze', name: 'Bronze', floor: 0, colour: '#b2724a' },
-  { key: 'silver', name: 'Silver', floor: 1100, colour: '#9aa7b4' },
-  { key: 'gold', name: 'Gold', floor: 1300, colour: '#e0b23c' },
-  { key: 'platinum', name: 'Platinum', floor: 1500, colour: '#5fd6c4' },
-  { key: 'diamond', name: 'Diamond', floor: 1700, colour: '#6aa8ff' },
-  { key: 'apex', name: 'Apex', floor: 1900, colour: '#ff5f7e' },
+  { key: 'silver', name: 'Silver', floor: 900, colour: '#9aa7b4' },
+  { key: 'gold', name: 'Gold', floor: 1100, colour: '#e0b23c' },
+  { key: 'platinum', name: 'Platinum', floor: 1300, colour: '#5fd6c4' },
+  { key: 'diamond', name: 'Diamond', floor: 1500, colour: '#6aa8ff' },
+  { key: 'apex', name: 'Apex', floor: 1700, colour: '#ff5f7e' },
 ]
 
 export function tierFor(rating) {
@@ -22,7 +22,7 @@ export function tierFor(rating) {
 // Newer players move faster so they reach their real rating sooner.
 export function kFactor(gamesPlayed, rating) {
   if (gamesPlayed < 10) return 48
-  if (rating >= 1900) return 16
+  if (rating >= 1700) return 16
   return 24
 }
 
