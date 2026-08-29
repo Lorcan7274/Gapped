@@ -33,7 +33,15 @@ export const DUEL_TYPES = [
 
 /** Custom presets, offered when you pick Custom or challenge your nemesis. */
 export const CUSTOM_DURATIONS = [1, 2, 5, 10, 20, 30]
-export const CUSTOM_DISTANCES = [100, 200, 400, 800, 1000, 2000, 5000]
+
+/**
+ * Distances the server will accept, from /api/meta. Keeping a second copy
+ * here is what let the sprint preset offer 100 m for a distance the server
+ * rejected, so this is only a fallback for before meta has loaded.
+ */
+export const FALLBACK_DISTANCES = [100, 200, 400, 800, 1000, 2000, 3000, 5000]
+export const distancesFrom = (meta) =>
+  meta?.distances?.length ? meta.distances : FALLBACK_DISTANCES
 
 export const formatDuration = (minutes) =>
   minutes === 1 ? '1 minute' : `${minutes} minutes`

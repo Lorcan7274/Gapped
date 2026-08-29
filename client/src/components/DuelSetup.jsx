@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import {
-  DUEL_TYPES, CUSTOM_DURATIONS, CUSTOM_DISTANCES, formatDuration, formatMetres,
+  DUEL_TYPES, CUSTOM_DURATIONS, distancesFrom, formatDuration, formatMetres,
 } from '../lib/duelTypes.js'
+import { useSession } from '../state/session.jsx'
 import { Shard } from './Crystal.jsx'
 import { Button, Label, Rule } from './ui.jsx'
 
@@ -11,6 +12,7 @@ import { Button, Label, Rule } from './ui.jsx'
  * three presets.
  */
 export default function DuelSetup({ opponent, onConfirm, onClose }) {
+  const { meta } = useSession()
   const [type, setType] = useState('distance')
   const active = DUEL_TYPES.find((t) => t.key === type) ?? DUEL_TYPES[0]
   const [unit, setUnit] = useState(active.unit)
@@ -22,7 +24,7 @@ export default function DuelSetup({ opponent, onConfirm, onClose }) {
     setParam(next.param)
   }
 
-  const options = unit === 'minutes' ? CUSTOM_DURATIONS : CUSTOM_DISTANCES
+  const options = unit === 'minutes' ? CUSTOM_DURATIONS : distancesFrom(meta)
   const label = unit === 'minutes' ? formatDuration : formatMetres
 
   return (
