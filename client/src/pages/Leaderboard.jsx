@@ -4,19 +4,18 @@ import { useSession } from '../state/session.jsx'
 import { Shard } from '../components/Crystal.jsx'
 import { Label, Spinner } from '../components/ui.jsx'
 
-/** Ranked bands read as Sapphire grades — never Gold or Silver. */
-const BANDS = [
-  { name: 'Sapphire V', floor: 1550 },
-  { name: 'Sapphire IV', floor: 1400 },
-  { name: 'Sapphire III', floor: 1250 },
-  { name: 'Sapphire II', floor: 1100 },
-  { name: 'Sapphire I', floor: 0 },
-]
+/**
+ * Bands come from the server's own tier table via /api/meta, so the ladder
+ * headings can never drift out of step with the tier shown next to a rating.
+ */
+const bandsFrom = (tiers) =>
+  [...(tiers ?? [])].sort((a, b) => b.floor - a.floor)
 
-const bandFor = (rating) => BANDS.find((b) => rating >= b.floor) ?? BANDS.at(-1)
+const bandFor = (bands, rating) =>
+  bands.find((b) => rating >= b.floor) ?? bands.at(-1) ?? null
 
 export default function Leaderboard() {
-  const { player, players } = useSession()
+  const { player, players, meta } = useSession()
   const [rows, setRows] = useState(null)
 
   useEffect(() => {
@@ -46,7 +45,9 @@ export default function Leaderboard() {
     )[0].id
   }, [ladder, player])
 
-  if (rows === null) {
+  const bands = bandsFrom(meta?.tiers)
+
+  if (rows === null || bands.length === 0) {
     return (
       <div className="flex justify-center py-20">
         <Spinner />
@@ -55,10 +56,12 @@ export default function Leaderboard() {
   }
 
   // Group into bands, dropping empty ones.
-  const grouped = BANDS.map((band) => ({
-    band,
-    entries: ladder.filter((p) => bandFor(p.rating).name === band.name),
-  })).filter((g) => g.entries.length > 0)
+  const grouped = bands
+    .map((band) => ({
+      band,
+      entries: ladder.filter((p) => bandFor(bands, p.rating)?.name === band.name),
+    }))
+    .filter((g) => g.entries.length > 0)
 
   return (
     <div className="px-6 pb-32 pt-6">

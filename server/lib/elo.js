@@ -5,11 +5,12 @@ export const RATING_FLOOR = 100
 // A new player starts at 1000, which is Bronze — the bottom of the ladder.
 // "Apex Nemesis" is a title for whoever is rank one, not a tier.
 export const TIERS = [
-  { key: 's1', name: 'Sapphire I', floor: 0, colour: '#4f46e5' },
-  { key: 's2', name: 'Sapphire II', floor: 1100, colour: '#4f46e5' },
-  { key: 's3', name: 'Sapphire III', floor: 1250, colour: '#4f46e5' },
-  { key: 's4', name: 'Sapphire IV', floor: 1400, colour: '#4f46e5' },
-  { key: 's5', name: 'Sapphire V', floor: 1550, colour: '#4f46e5' },
+  { key: 'bronze', name: 'Bronze', floor: 0, colour: '#b2724a' },
+  { key: 'silver', name: 'Silver', floor: 1100, colour: '#9aa7b4' },
+  { key: 'gold', name: 'Gold', floor: 1250, colour: '#c8a233' },
+  { key: 'sapphire', name: 'Sapphire', floor: 1400, colour: '#4f46e5' },
+  { key: 'amethyst', name: 'Amethyst', floor: 1550, colour: '#8b5cf6' },
+  { key: 'diamond', name: 'Diamond', floor: 1700, colour: '#6aa8ff' },
 ]
 
 export function tierFor(rating) {
@@ -23,7 +24,7 @@ export function tierFor(rating) {
 // Newer players move faster so they reach their real rating sooner.
 export function kFactor(gamesPlayed, rating) {
   if (gamesPlayed < 10) return 48
-  if (rating >= 1550) return 16
+  if (rating >= 1700) return 16
   return 24
 }
 

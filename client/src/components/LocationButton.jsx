@@ -5,11 +5,11 @@ import { getCurrentPosition } from '../lib/tracker.js'
 /**
  * Header control for turning location on. Location is optional everywhere —
  * you can join and use the app without it — but nobody can find you to duel
- * until it is on, so it needs to be reachable from any screen rather than
- * only at join.
+ * until it is on, so while it is off this reads as a filled indigo bubble
+ * that is hard to miss, and settles into a quiet outline once granted.
  *
- * A browser remembers a refusal, so once denied it will not prompt again.
- * In that case we say what to do instead of silently doing nothing.
+ * A browser remembers a refusal and will not prompt again, so a denial says
+ * what to do instead of appearing to do nothing.
  */
 export default function LocationButton() {
   const { player, pushLocation, setNotice } = useSession()
@@ -39,13 +39,18 @@ export default function LocationButton() {
     <button
       onClick={share}
       disabled={busy}
-      aria-label={on ? 'Location on, tap to refresh' : 'Share your location'}
-      className="label -my-2 flex min-h-[56px] items-center gap-1.5 pl-4 text-ink disabled:opacity-40"
+      aria-label={on ? 'Location is on. Tap to refresh it.' : 'Share your location'}
+      className={`label -my-2 flex min-h-[56px] items-center gap-2 rounded-full px-4
+                  transition disabled:opacity-50 ${
+                    on
+                      ? 'border border-rule text-slate'
+                      : 'bg-indigo text-paper'
+                  }`}
     >
       <span
-        className={`size-1.5 rounded-full ${on ? 'bg-indigo' : 'border border-muted'}`}
+        className={`size-2 shrink-0 rounded-full ${on ? 'bg-indigo' : 'bg-paper'}`}
       />
-      {busy ? 'Locating' : on ? 'Location' : 'Share location'}
+      {busy ? 'Locating' : on ? 'Location on' : 'Share location'}
     </button>
   )
 }
