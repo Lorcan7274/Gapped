@@ -127,11 +127,15 @@
   --gem-deep: #161447;
 }
 
-.gem--garnet {
-  --gem-pale: #e8bccb;
-  --gem-mid: #a43f5e;
-  --gem-deep: #3d1421;
-}
+.gem--garnet   { --gem-pale: #e8bccb; --gem-mid: #a43f5e; --gem-deep: #3d1421; }
+
+/* One stone per tier, so the ladder reads at a glance. */
+.gem--bronze   { --gem-pale: #edcdb4; --gem-mid: #b2724a; --gem-deep: #40230f; }
+.gem--silver   { --gem-pale: #e6e9ed; --gem-mid: #9aa7b4; --gem-deep: #2f3740; }
+.gem--gold     { --gem-pale: #f5e3ab; --gem-mid: #c8a233; --gem-deep: #493409; }
+.gem--sapphire { --gem-pale: #cfc9f5; --gem-mid: #4f46e5; --gem-deep: #161447; }
+.gem--amethyst { --gem-pale: #ddc9f7; --gem-mid: #8b5cf6; --gem-deep: #2c1650; }
+.gem--diamond  { --gem-pale: #e2f0ff; --gem-mid: #6aa8ff; --gem-deep: #14304f; }
 
 .gem--still { animation: none; }
 

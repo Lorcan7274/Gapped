@@ -1,20 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { getCurrentPosition } from '../lib/tracker.js'
+import { DUEL_TYPES, describe } from '../lib/duelTypes.js'
 import Crystal, { Shard } from '../components/Crystal.jsx'
+import TierLadder from '../components/TierLadder.jsx'
+import DuelSetup from '../components/DuelSetup.jsx'
 import { Button, Label, Rule } from '../components/ui.jsx'
 
-const DUEL_TYPES = [
-  { key: 'distance', name: 'Distance duel', detail: '10 minutes' },
-  { key: 'pace', name: 'Pace duel', detail: '1 km' },
-  { key: 'sprint', name: 'Sprint duel', detail: '400 m' },
-]
-
 export default function Home({ onFindDuel }) {
-  const { player, players, pushLocation } = useSession()
+  const { player, players, pushLocation, send, setNotice } = useSession()
   const [type, setType] = useState('distance')
+  const [ladderOpen, setLadderOpen] = useState(false)
+  const [setup, setSetup] = useState(null)
 
-  // Refresh position each time this screen mounts, as well as at join.
   useEffect(() => {
     let cancelled = false
     getCurrentPosition()
@@ -36,20 +34,44 @@ export default function Home({ onFindDuel }) {
 
   if (!player) return null
 
+  const selected = DUEL_TYPES.find((t) => t.key === type) ?? DUEL_TYPES[0]
+
+  function confirm(shape) {
+    setSetup(null)
+    const opponent = setup?.opponent
+    if (opponent) {
+      // Distance duels are timed; the others are raced to a distance. Until
+      // the server carries modes, a timed duel is sent as its own row.
+      send('challenge', {
+        opponentId: opponent.id,
+        distanceM: shape.unit === 'metres' ? shape.param : 1000,
+      })
+      setNotice({ tone: 'good', text: `Challenge sent · ${describe(shape)}` })
+    } else {
+      onFindDuel?.(shape)
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col px-6 pt-2">
-      <div className="pt-3">
-        <Crystal size={66} />
-      </div>
+      {/* Tap the crystal for the full ladder. */}
+      <button
+        onClick={() => setLadderOpen(true)}
+        aria-label="See all ranks"
+        className="pt-3"
+      >
+        <Crystal size={66} tone={player.tier?.key ?? 'sapphire'} />
+      </button>
 
-      <div className="mt-5 flex flex-col items-center gap-1.5 text-center">
+      <button
+        onClick={() => setLadderOpen(true)}
+        className="mt-5 flex flex-col items-center gap-1.5 text-center"
+      >
         <Label>Rating</Label>
         <p className="display text-[72px]">{player.rating}</p>
         <p className="label-13 label text-ink">{player.tier?.name}</p>
-        <p className="text-[13px] text-slate">
-          Top 12% · up 24 this week
-        </p>
-      </div>
+        <p className="text-[13px] text-slate">Tap for all ranks</p>
+      </button>
 
       {/* Nemesis */}
       <div className="mt-6">
@@ -67,14 +89,14 @@ export default function Home({ onFindDuel }) {
               </p>
             </div>
             <button
-              onClick={() => onFindDuel?.(nemesis)}
+              onClick={() => setSetup({ opponent: nemesis })}
               className="btn btn-outline w-auto shrink-0 px-6 text-[13px]"
             >
               Challenge
             </button>
           </div>
         ) : (
-          <p className="py-5 text-[15px] text-slate">
+          <p className="py-4 text-[15px] text-slate">
             No nemesis yet. Nobody else has joined.
           </p>
         )}
@@ -92,9 +114,7 @@ export default function Home({ onFindDuel }) {
             >
               <span
                 className={`size-2.5 shrink-0 rounded-full ${
-                  type === option.key
-                    ? 'bg-indigo'
-                    : 'border border-muted'
+                  type === option.key ? 'bg-indigo' : 'border border-muted'
                 }`}
               />
               <span
@@ -109,17 +129,39 @@ export default function Home({ onFindDuel }) {
           </div>
         ))}
         <Rule />
+        <button
+          onClick={() => setSetup({ opponent: null })}
+          className="flex min-h-[56px] w-full items-center gap-4 py-3 text-left"
+        >
+          <span className="size-2.5 shrink-0 rounded-full border border-muted" />
+          <span className="flex-1 text-[16px] text-muted">Custom</span>
+          <span className="label text-muted">Set it</span>
+        </button>
+        <Rule />
       </div>
 
       <div className="mt-auto flex flex-col gap-2.5 pt-7">
-        <Button onClick={() => onFindDuel?.(null)}>
+        <Button
+          onClick={() =>
+            onFindDuel?.({ type: selected.key, unit: selected.unit, param: selected.param })
+          }
+        >
           <span className="size-2 rounded-full bg-indigo" />
           Find duel
         </Button>
         <p className="text-center text-[13px] text-muted">
-          Estimated queue 12 seconds · match within 25 rating
+          {selected.name} · {selected.detail} · match within 25 rating
         </p>
       </div>
+
+      {ladderOpen && <TierLadder onClose={() => setLadderOpen(false)} />}
+      {setup && (
+        <DuelSetup
+          opponent={setup.opponent}
+          onConfirm={confirm}
+          onClose={() => setSetup(null)}
+        />
+      )}
     </div>
   )
 }

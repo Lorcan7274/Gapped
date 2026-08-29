@@ -6,12 +6,15 @@
  * The only non-typographic element in the app. Scales by `size` alone —
  * every facet is expressed in percentages.
  */
+const TONES = new Set([
+  'bronze', 'silver', 'gold', 'sapphire', 'amethyst', 'diamond', 'garnet',
+])
+
 export function Shard({ size = 78, tone = 'sapphire', still = false, className = '' }) {
+  const toneClass = TONES.has(tone) ? `gem--${tone}` : 'gem--sapphire'
   return (
     <span
-      className={`gem ${tone === 'garnet' ? 'gem--garnet' : ''} ${
-        still ? 'gem--still' : ''
-      } ${className}`}
+      className={`gem ${toneClass} ${still ? 'gem--still' : ''} ${className}`}
       style={{ '--gem-w': `${size}px` }}
       aria-hidden="true"
     >
