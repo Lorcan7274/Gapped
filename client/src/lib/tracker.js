@@ -10,87 +10,162 @@ export function distanceMetres(a, b) {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)))
 }
 
-// Readings worse than this are too noisy to trust for a race.
-const MAX_ACCURACY_M = 35
-// Below this, a "movement" is almost certainly GPS drift while standing still.
-const MIN_STEP_M = 3
-// Above roughly 12 m/s a runner has teleported; drop the sample.
-const MAX_SPEED_MPS = 12
+/** A fix reporting worse accuracy than this is not trusted at all. */
+export const MAX_ACCURACY_M = 25
+/** Faster than this from the last accepted fix means the fix is wrong. */
+export const MAX_SPEED_MPS = 11
+/** Pace is averaged over this much recent movement. */
+export const PACE_WINDOW_MS = 30_000
+
+export const REJECT_ACCURACY = 'accuracy'
+export const REJECT_SPEED = 'speed'
 
 /**
- * Accumulates real distance travelled from GPS fixes, discarding the noise
- * that would otherwise let someone win a race by standing still.
+ * Turns a stream of GPS fixes into a cumulative distance in metres.
+ *
+ * Two filters, in order:
+ *   1. accuracy worse than 25 m  -> reject
+ *   2. implied speed from the previous accepted fix over 11 m/s -> reject
+ * Anything else is accepted and its distance from the previous accepted fix
+ * is added to the total.
+ *
+ * The first accepted fix only anchors the trail; it adds no distance.
  */
-export function createTracker({ onUpdate, onError }) {
+export function createTracker({ onUpdate, onError } = {}) {
   let watchId = null
   let previous = null
   let total = 0
   let startedAt = null
+  let accepted = 0
+  let rejected = 0
+  let rejectedAccuracy = 0
+  let rejectedSpeed = 0
+  let lastAccuracy = null
+  let lastRejection = null
+  // Recent accepted fixes: { at, total } — enough to average pace over a window.
+  let trail = []
+
+  function emit() {
+    onUpdate?.({
+      metres: total,
+      accepted,
+      rejected,
+      rejectedAccuracy,
+      rejectedSpeed,
+      accuracy: lastAccuracy,
+      lastRejection,
+      elapsedMs: startedAt ? Date.now() - startedAt : 0,
+      paceMsPerKm: paceMsPerKm(),
+      running: watchId != null,
+    })
+  }
+
+  /**
+   * Pace over the last 30 seconds of movement, in ms per km. Null until there
+   * is enough movement in the window to say anything meaningful.
+   */
+  function paceMsPerKm() {
+    if (trail.length < 2) return null
+    const newest = trail[trail.length - 1]
+    const cutoff = newest.at - PACE_WINDOW_MS
+    // Oldest sample still inside the window, or the oldest we have.
+    const oldest = trail.find((p) => p.at >= cutoff) ?? trail[0]
+    const metres = newest.total - oldest.total
+    const elapsed = newest.at - oldest.at
+    if (metres < 5 || elapsed < 3000) return null
+    return (elapsed / metres) * 1000
+  }
 
   function handle(position) {
     const { latitude: lat, longitude: lng, accuracy } = position.coords
     const at = position.timestamp
+    lastAccuracy = accuracy
 
     if (accuracy > MAX_ACCURACY_M) {
-      onUpdate({ metres: total, accuracy, quality: 'poor' })
+      rejected += 1
+      rejectedAccuracy += 1
+      lastRejection = REJECT_ACCURACY
+      emit()
       return
     }
 
     const point = { lat, lng, at }
+
     if (previous) {
       const step = distanceMetres(previous, point)
       const seconds = Math.max((at - previous.at) / 1000, 0.001)
-      const speed = step / seconds
-      if (step >= MIN_STEP_M && speed <= MAX_SPEED_MPS) {
-        total += step
-        previous = point
-      } else if (step >= MIN_STEP_M) {
-        // Implausible jump: re-anchor without crediting the distance.
-        previous = point
+      if (step / seconds > MAX_SPEED_MPS) {
+        rejected += 1
+        rejectedSpeed += 1
+        lastRejection = REJECT_SPEED
+        emit()
+        return
       }
-    } else {
-      previous = point
+      total += step
     }
 
-    onUpdate({
-      metres: total,
-      accuracy,
-      quality: accuracy <= 12 ? 'good' : 'fair',
-      elapsedMs: startedAt ? at - startedAt : 0,
-    })
+    previous = point
+    accepted += 1
+    lastRejection = null
+    trail.push({ at, total })
+    // Keep a little more than the pace window so the oldest sample in range
+    // is always available.
+    const cutoff = at - PACE_WINDOW_MS * 2
+    if (trail.length > 4 && trail[0].at < cutoff) {
+      trail = trail.filter((p) => p.at >= cutoff)
+    }
+    emit()
   }
 
   return {
     start() {
+      if (watchId != null) return
       if (!('geolocation' in navigator)) {
-        onError(new Error('This device cannot report its location.'))
+        onError?.(new Error('This device cannot report its location.'))
         return
       }
       startedAt = Date.now()
-      total = 0
-      previous = null
-      watchId = navigator.geolocation.watchPosition(handle, onError, {
+      watchId = navigator.geolocation.watchPosition(handle, (err) => onError?.(err), {
         enableHighAccuracy: true,
         maximumAge: 0,
-        timeout: 15_000,
+        timeout: 20_000,
       })
+      emit()
     },
     stop() {
       if (watchId != null) navigator.geolocation.clearWatch(watchId)
       watchId = null
+      emit()
     },
-    // Dev-only escape hatch so the race UI can be exercised at a desk.
-    advance(metres) {
-      total += metres
-      onUpdate({
-        metres: total,
-        accuracy: 5,
-        quality: 'good',
-        elapsedMs: startedAt ? Date.now() - startedAt : 0,
+    reset() {
+      total = 0
+      previous = null
+      accepted = 0
+      rejected = 0
+      rejectedAccuracy = 0
+      rejectedSpeed = 0
+      lastAccuracy = null
+      lastRejection = null
+      trail = []
+      startedAt = watchId != null ? Date.now() : null
+      emit()
+    },
+    /**
+     * Feed a synthetic fix, in the same shape the debug simulator and tests
+     * use: { lat, lng, accuracy, timestamp }. Normalised to a GeolocationPosition
+     * so it goes through exactly the same code path as a real fix.
+     */
+    push({ lat, lng, accuracy, timestamp }) {
+      handle({
+        coords: { latitude: lat, longitude: lng, accuracy },
+        timestamp: timestamp ?? Date.now(),
       })
     },
     get metres() {
       return total
+    },
+    get running() {
+      return watchId != null
     },
   }
 }
