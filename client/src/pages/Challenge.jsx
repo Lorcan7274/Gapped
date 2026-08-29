@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { sortPlayers, formatDistance, SORTS } from '../lib/ranking.js'
 import { distanceLabel } from '../lib/format.js'
-import { Button, Card, TierBadge, EmptyState } from '../components/ui.jsx'
+import { Button, Label, Rule, EmptyState } from '../components/ui.jsx'
 
 export default function Challenge() {
   const { player, players, meta, send, outgoing, setOutgoing } = useSession()
@@ -20,26 +20,24 @@ export default function Challenge() {
   const unplaced = others.length - placed
 
   return (
-    <div className="flex flex-col gap-4 px-4 pb-28 pt-4">
-      <div>
-        <h2 className="text-2xl font-black tracking-tight">Challenge</h2>
-        <p className="nums mt-0.5 text-xs text-ink-400">
-          {others.length} runner{others.length === 1 ? '' : 's'}
-          {unplaced > 0 && ` · ${unplaced} without location`}
-        </p>
-      </div>
+    <div className="px-6 pb-32 pt-6">
+      <h2 className="display text-[34px]">Lobby</h2>
+      <p className="nums mt-1 text-[13px] text-slate">
+        {others.length} runner{others.length === 1 ? '' : 's'}
+        {unplaced > 0 && ` · ${unplaced} without location`}
+      </p>
 
       {/* Sort toggles */}
-      <div className="flex gap-1.5 rounded-2xl bg-ink-900 p-1.5">
+      <div className="mt-5 flex gap-6 border-b border-rule">
         {SORTS.map((option) => (
           <button
             key={option.key}
             onClick={() => setSort(option.key)}
             aria-pressed={sort === option.key}
-            className={`flex-1 rounded-xl px-2 py-2 text-xs font-bold transition ${
+            className={`label flex min-h-[56px] items-center transition ${
               sort === option.key
-                ? 'bg-surge-500 text-ink-950'
-                : 'text-ink-400 hover:text-ink-200'
+                ? 'border-b-2 border-ink text-ink'
+                : 'border-b-2 border-transparent text-muted'
             }`}
           >
             {option.label}
@@ -48,28 +46,25 @@ export default function Challenge() {
       </div>
 
       {outgoing && (
-        <Card className="border-volt-400/40 bg-volt-400/5">
+        <div className="mt-5 border-y border-rule py-4">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-volt-400">
-                Challenge sent to {outgoing.opponent.displayName}
-              </p>
-              <p className="nums text-xs text-ink-400">
-                {distanceLabel(outgoing.distanceM)} · waiting for them to accept
+              <Label className="text-indigo">Challenge sent</Label>
+              <p className="mt-1 truncate text-[15px]">
+                {outgoing.opponent.displayName}
               </p>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
+            <button
               onClick={() => {
                 send('challenge:cancel', { challengeId: outgoing.challengeId })
                 setOutgoing(null)
               }}
+              className="btn btn-outline w-auto shrink-0 px-5 text-[13px]"
             >
               Cancel
-            </Button>
+            </button>
           </div>
-        </Card>
+        </div>
       )}
 
       {others.length === 0 ? (
@@ -79,66 +74,54 @@ export default function Challenge() {
           body="Nobody else has joined yet. Open Gap on another phone and they will show up here the moment they join."
         />
       ) : (
-        <ul className="flex flex-col gap-2">
-          {others.map((p) => {
+        <ul className="mt-2">
+          {others.map((p, i) => {
             const noLocation = p.distanceM == null
             return (
-              <li key={p.id}>
-                <Card className={`flex flex-col gap-3 ${noLocation ? 'opacity-60' : ''}`}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
+              <li key={p.id} className={i > 0 ? 'border-t border-rule' : ''}>
+                <div className="flex min-h-[64px] items-center gap-4 py-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
                       <span
-                        className={`size-2 shrink-0 rounded-full ${
-                          p.online ? 'bg-surge-500' : 'bg-ink-600'
+                        className={`truncate text-[17px] font-700 ${
+                          noLocation ? 'text-muted' : 'text-ink'
                         }`}
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate font-bold">{p.displayName}</span>
-                          <TierBadge tier={p.tier} />
-                        </div>
-                        <p className="nums mt-0.5 text-xs text-ink-400">
-                          <span className={noLocation ? 'text-ink-600' : 'text-ink-200'}>
-                            {formatDistance(p.distanceM)}
-                          </span>
-                          {' · '}
-                          {p.rating}
-                          {p.ratingGap != null && (
-                            <span className="text-ink-600">
-                              {' '}({p.ratingGap === 0 ? 'even' : `${p.ratingGap} apart`})
-                            </span>
-                          )}
-                        </p>
-                      </div>
+                      >
+                        {p.displayName}
+                      </span>
+                      <span className="label text-muted">{p.tier?.name}</span>
                     </div>
-                    <Button
-                      size="sm"
-                      disabled={Boolean(outgoing) || !p.online}
-                      onClick={() => setPicking(picking === p.id ? null : p.id)}
-                    >
-                      {picking === p.id ? 'Close' : p.online ? 'Duel' : 'Offline'}
-                    </Button>
+                    <p className="nums mt-1 text-[13px] text-slate">
+                      {formatDistance(p.distanceM)} · {p.rating}
+                      {p.ratingGap != null &&
+                        ` · ${p.ratingGap === 0 ? 'even' : `${p.ratingGap} apart`}`}
+                    </p>
                   </div>
+                  <button
+                    disabled={Boolean(outgoing) || !p.online}
+                    onClick={() => setPicking(picking === p.id ? null : p.id)}
+                    className="btn btn-outline w-auto shrink-0 px-6 text-[13px] disabled:opacity-30"
+                  >
+                    {picking === p.id ? 'Close' : p.online ? 'Duel' : 'Away'}
+                  </button>
+                </div>
 
-                  {picking === p.id && (
-                    <div className="flex flex-wrap gap-2 border-t border-ink-800 pt-3">
-                      {(meta?.distances ?? []).map((d) => (
-                        <button
-                          key={d}
-                          onClick={() => {
-                            send('challenge', { opponentId: p.id, distanceM: d })
-                            setPicking(null)
-                          }}
-                          className="nums rounded-xl border border-ink-600 px-3 py-2 text-sm
-                                     font-semibold text-ink-200 transition
-                                     hover:border-surge-500 hover:text-surge-400"
-                        >
-                          {distanceLabel(d)}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </Card>
+                {picking === p.id && (
+                  <div className="flex flex-wrap gap-2 pb-4">
+                    {(meta?.distances ?? []).map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => {
+                          send('challenge', { opponentId: p.id, distanceM: d })
+                          setPicking(null)
+                        }}
+                        className="nums label min-h-[56px] rounded-full border border-ink px-5 text-ink"
+                      >
+                        {distanceLabel(d)}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </li>
             )
           })}

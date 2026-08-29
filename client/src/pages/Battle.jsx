@@ -1,252 +1,175 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { createTracker } from '../lib/tracker.js'
-import { metres, distanceLabel, preciseClock, pace } from '../lib/format.js'
-import { Button, TierBadge } from '../components/ui.jsx'
+import { Button, Label } from '../components/ui.jsx'
 
-// How often we push our position to the opponent.
-const REPORT_INTERVAL_MS = 1000
+const REPORT_INTERVAL_MS = 2000
 
+const clock = (ms) => {
+  const total = Math.max(0, Math.round(ms / 1000))
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+const paceLabel = (msPerKm) => {
+  if (!msPerKm || !Number.isFinite(msPerKm)) return '—:—'
+  const total = Math.round(msPerKm / 1000)
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+/**
+ * The hero screen. Must read at arm's length in direct sunlight, so it holds
+ * the gap and nothing that competes with it.
+ */
 export default function Battle() {
-  const { match, send, opponentProgress, opponentFinished } = useSession()
-
+  const { match, send, opponentProgress } = useSession()
   const [phase, setPhase] = useState('countdown')
   const [countdown, setCountdown] = useState(null)
   const [mine, setMine] = useState(0)
-  const [elapsedMs, setElapsedMs] = useState(0)
-  const [quality, setQuality] = useState('waiting')
-  const [gpsError, setGpsError] = useState(null)
+  const [pace, setPace] = useState(null)
+  const [remainingMs, setRemainingMs] = useState(0)
 
   const trackerRef = useRef(null)
   const startedAtRef = useRef(null)
   const lastReportRef = useRef(0)
-  const finishedRef = useRef(false)
+  const wakeLockRef = useRef(null)
 
-  /* ------------------------------------------------------------- countdown */
+  /* Screen wake lock — the phone must not sleep mid-duel. */
+  useEffect(() => {
+    let released = false
+    const acquire = async () => {
+      try {
+        if ('wakeLock' in navigator && !released) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+        }
+      } catch {
+        /* denied or unsupported; the duel still runs */
+      }
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') acquire()
+    }
+    acquire()
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      released = true
+      document.removeEventListener('visibilitychange', onVisible)
+      wakeLockRef.current?.release?.().catch(() => {})
+      wakeLockRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     if (!match) return
     const tick = () => {
-      const remaining = match.startsAt - Date.now()
-      if (remaining <= 0) {
-        setCountdown(0)
+      const left = match.startsAt - Date.now()
+      if (left <= 0) {
         setPhase('running')
         return true
       }
-      setCountdown(Math.ceil(remaining / 1000))
+      setCountdown(Math.ceil(left / 1000))
       return false
     }
     if (tick()) return
-    const timer = setInterval(() => {
-      if (tick()) clearInterval(timer)
-    }, 100)
+    const timer = setInterval(() => tick() && clearInterval(timer), 100)
     return () => clearInterval(timer)
   }, [match])
 
-  /* ---------------------------------------------------------------- timing */
-
   useEffect(() => {
-    if (phase !== 'running') return
+    if (phase !== 'running' || !match) return
     startedAtRef.current = Date.now()
+    const durationMs = (match.durationMs ?? 10 * 60_000)
     const timer = setInterval(() => {
-      setElapsedMs(Date.now() - startedAtRef.current)
-    }, 100)
+      setRemainingMs(durationMs - (Date.now() - startedAtRef.current))
+    }, 250)
     return () => clearInterval(timer)
-  }, [phase])
-
-  /* --------------------------------------------------------------- tracking */
+  }, [phase, match])
 
   useEffect(() => {
     if (phase !== 'running' || !match) return
-
     const tracker = createTracker({
-      onUpdate: ({ metres: run, quality: q }) => {
-        setQuality(q)
-        setMine(run)
-
-        if (finishedRef.current) return
-
+      onUpdate: ({ metres, paceMsPerKm }) => {
+        setMine(metres)
+        setPace(paceMsPerKm)
         const now = Date.now()
-        if (run >= match.distanceM) {
-          finishedRef.current = true
-          send('match:finish', {
-            matchId: match.id,
-            elapsedMs: now - startedAtRef.current,
-          })
-          setPhase('done')
-          return
-        }
         if (now - lastReportRef.current >= REPORT_INTERVAL_MS) {
           lastReportRef.current = now
           send('match:progress', {
             matchId: match.id,
-            progressM: run,
+            progressM: metres,
             elapsedMs: now - startedAtRef.current,
           })
         }
       },
-      onError: (err) =>
-        setGpsError(
-          err.code === 1
-            ? 'Location permission is off. Gap cannot score the race without it.'
-            : 'Lost the GPS signal. Keep going — we are still trying.'
-        ),
     })
-
     trackerRef.current = tracker
     tracker.start()
-    return () => {
-      tracker.stop()
-      trackerRef.current = null
-    }
+    return () => tracker.stop()
   }, [phase, match, send])
 
-  const mineFraction = useMemo(
-    () => (match ? Math.min(1, mine / match.distanceM) : 0),
-    [mine, match]
-  )
-  const theirsFraction = useMemo(
-    () => (match ? Math.min(1, opponentProgress / match.distanceM) : 0),
-    [opponentProgress, match]
-  )
+  const gap = Math.round(mine - opponentProgress)
+  const ahead = gap >= 0
+  const gapText = useMemo(() => `${ahead ? '' : '−'}${Math.abs(gap)}`, [gap, ahead])
 
   if (!match) return null
 
-  const gap = mine - opponentProgress
-  const leading = gap > 0
+  if (phase === 'countdown') {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-paper px-6">
+        <p className="display text-[140px] text-ink">{countdown ?? '—'}</p>
+        <Label className="mt-4">Get to the line</Label>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-ink-950 px-5 safe-top safe-bottom">
-      <header className="flex items-center justify-between py-4">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-ink-400">
-            Head to head
-          </p>
-          <h2 className="nums text-xl font-black">
-            {distanceLabel(match.distanceM)} race
-          </h2>
-        </div>
-        <div className="text-right">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-ink-400">
-            vs
-          </p>
-          <div className="flex items-center gap-2">
-            <span className="font-bold">{match.opponent.displayName}</span>
-            <TierBadge tier={match.opponent.tier} />
-          </div>
-        </div>
+    <div className="flex min-h-dvh flex-col bg-paper px-6 safe-t safe-b">
+      <header className="flex items-center justify-between border-b border-rule pb-4">
+        <span className="label text-ink">
+          Versus {match.opponent?.displayName ?? 'Opponent'}
+        </span>
+        <span className="nums label text-ink">{clock(remainingMs)}</span>
       </header>
 
-      {phase === 'countdown' ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4">
-          <span className="nums text-[8rem] font-black leading-none text-surge-400">
-            {countdown ?? '—'}
-          </span>
-          <p className="text-ink-400">Get to the line.</p>
-        </div>
-      ) : (
-        <>
-          <div className="flex flex-1 flex-col justify-center gap-8">
-            <div className="text-center">
-              <p className="nums text-7xl font-black leading-none tracking-tighter">
-                {preciseClock(elapsedMs)}
-              </p>
-              <p className="nums mt-2 text-sm text-ink-400">
-                {pace(elapsedMs, mine)} · {metres(mine)} of{' '}
-                {distanceLabel(match.distanceM)}
-              </p>
-            </div>
-
-            {/* The gap. This is the whole product in one number. */}
-            <div className="text-center">
-              <p
-                className={`nums text-5xl font-black tracking-tight ${
-                  leading ? 'text-surge-400' : 'text-flare-400'
-                }`}
-              >
-                {leading ? '+' : ''}
-                {Math.round(gap)} m
-              </p>
-              <p className="mt-1 text-sm font-semibold uppercase tracking-wider text-ink-400">
-                {opponentFinished
-                  ? `${match.opponent.displayName} has finished`
-                  : leading
-                    ? 'You are ahead'
-                    : 'You are behind'}
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-5">
-              <Lane
-                label="You"
-                fraction={mineFraction}
-                colour="bg-surge-500"
-                value={metres(mine)}
-              />
-              <Lane
-                label={match.opponent.displayName}
-                fraction={theirsFraction}
-                colour="bg-flare-500"
-                value={metres(opponentProgress)}
-              />
-            </div>
-          </div>
-
-          <footer className="flex flex-col gap-3 pb-2">
-            {gpsError && (
-              <p className="rounded-2xl bg-flare-500/10 px-4 py-3 text-center text-sm text-flare-400">
-                {gpsError}
-              </p>
-            )}
-            <p className="text-center text-[11px] uppercase tracking-wider text-ink-600">
-              GPS {quality}
-            </p>
-
-            {import.meta.env.DEV && phase === 'running' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => trackerRef.current?.advance(50)}
-              >
-                Dev: advance 50 m
-              </Button>
-            )}
-
-            {phase === 'done' ? (
-              <p className="text-center text-sm text-ink-400">
-                Finished. Waiting on the result…
-              </p>
-            ) : (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (confirm('Forfeit this race? Your opponent takes the win.')) {
-                    send('match:forfeit', { matchId: match.id })
-                  }
-                }}
-              >
-                Forfeit
-              </Button>
-            )}
-          </footer>
-        </>
-      )}
-    </div>
-  )
-}
-
-function Lane({ label, fraction, colour, value }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex justify-between text-xs font-semibold">
-        <span className="truncate text-ink-200">{label}</span>
-        <span className="nums text-ink-400">{value}</span>
+      {/* The gap. Everything else on this screen defers to it. */}
+      <div className="flex flex-1 flex-col items-center justify-center">
+        <p
+          className={`display display-tight text-[124px] ${
+            ahead ? 'text-ink' : 'text-garnet'
+          }`}
+        >
+          {gapText}
+        </p>
+        <p className={`display text-[44px] ${ahead ? 'text-ink' : 'text-garnet'}`}>
+          meters
+        </p>
+        <p
+          className="mt-5 text-[26px] font-700 uppercase"
+          style={{ letterSpacing: '0.22em' }}
+        >
+          {ahead ? 'Ahead' : 'Behind'}
+        </p>
       </div>
-      <div className="h-3 overflow-hidden rounded-full bg-ink-800">
-        <div
-          className={`h-full rounded-full ${colour} transition-[width] duration-500 ease-out`}
-          style={{ width: `${Math.max(2, fraction * 100)}%` }}
-        />
+
+      <div className="border-t border-rule pt-5">
+        <div className="flex items-end justify-between pb-5">
+          <div>
+            <Label>Pace</Label>
+            <p className="display mt-1.5 text-[40px]">{paceLabel(pace)}</p>
+          </div>
+          <div className="text-right">
+            <Label>Distance</Label>
+            <p className="display mt-1.5 text-[40px]">{Math.round(mine)}</p>
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => {
+            if (confirm('End this duel? Your opponent takes the win.')) {
+              send('match:forfeit', { matchId: match.id })
+            }
+          }}
+        >
+          Hold to end
+        </Button>
       </div>
     </div>
   )

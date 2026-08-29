@@ -1,138 +1,125 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { getCurrentPosition } from '../lib/tracker.js'
-import { metres, ago } from '../lib/format.js'
-import { Card, TierBadge, EmptyState, Button } from '../components/ui.jsx'
+import Crystal, { Shard } from '../components/Crystal.jsx'
+import { Button, Label, Rule } from '../components/ui.jsx'
 
-export default function Home() {
+const DUEL_TYPES = [
+  { key: 'distance', name: 'Distance duel', detail: '10 minutes' },
+  { key: 'pace', name: 'Pace duel', detail: '1 mi' },
+  { key: 'sprint', name: 'Sprint duel', detail: '2 km' },
+]
+
+export default function Home({ onFindDuel }) {
   const { player, players, pushLocation } = useSession()
-  const [locating, setLocating] = useState(false)
-  const [locationDenied, setLocationDenied] = useState(false)
+  const [type, setType] = useState('distance')
 
-  // Refresh position every time this screen mounts, as well as at join.
+  // Refresh position each time this screen mounts, as well as at join.
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
-      setLocating(true)
-      try {
-        const coords = await getCurrentPosition()
-        if (!cancelled) {
-          await pushLocation(coords)
-          setLocationDenied(false)
-        }
-      } catch {
-        if (!cancelled) setLocationDenied(true)
-      } finally {
-        if (!cancelled) setLocating(false)
-      }
-    })()
+    getCurrentPosition()
+      .then((coords) => !cancelled && pushLocation(coords))
+      .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [pushLocation])
 
-  async function retryLocation() {
-    setLocating(true)
-    try {
-      await pushLocation(await getCurrentPosition())
-      setLocationDenied(false)
-    } catch {
-      setLocationDenied(true)
-    } finally {
-      setLocating(false)
-    }
-  }
+  // The nemesis is whoever sits closest to you on rating.
+  const nemesis = useMemo(() => {
+    const others = players.filter((p) => p.id !== player?.id)
+    if (others.length === 0) return null
+    return [...others].sort(
+      (a, b) => (a.ratingGap ?? Infinity) - (b.ratingGap ?? Infinity)
+    )[0]
+  }, [players, player?.id])
 
   if (!player) return null
 
-  const others = players.filter((p) => p.id !== player.id)
-  const online = others.filter((p) => p.online).length
-
   return (
-    <div className="flex flex-col gap-4 px-4 pb-28 pt-4">
-      {/* You */}
-      <Card className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-ink-400">
-            You
-          </p>
-          <h2 className="truncate text-2xl font-black tracking-tight">
-            {player.displayName}
-          </h2>
-          <div className="mt-1.5">
-            <TierBadge tier={player.tier} />
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-ink-400">
-            Rating
-          </p>
-          <p className="nums text-4xl font-black leading-none">{player.rating}</p>
-        </div>
-      </Card>
-
-      {(locationDenied || player.hasLocation === false) && (
-        <Card className="border-volt-400/40 bg-volt-400/5">
-          <p className="text-sm font-semibold text-volt-400">
-            Location is off
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-ink-400">
-            You are in, but nobody can find you to race. Turn location on and
-            you will show up on their radar.
-          </p>
-          <Button size="sm" variant="ghost" className="mt-3" onClick={retryLocation} disabled={locating}>
-            {locating ? 'Locating…' : 'Turn on location'}
-          </Button>
-        </Card>
-      )}
-
-      {/* Everyone else */}
-      <div className="flex items-baseline justify-between pt-1">
-        <h3 className="text-lg font-black tracking-tight">Runners</h3>
-        <span className="nums text-xs text-ink-400">
-          {online} online · {others.length} joined
-        </span>
+    <div className="flex min-h-[calc(100dvh-157px)] flex-col px-6 pt-2">
+      <div className="pt-3">
+        <Crystal size={66} />
       </div>
 
-      {others.length === 0 ? (
-        <EmptyState
-          icon="🫥"
-          title="Nobody else yet"
-          body="You are the first one here. Open Gap on another phone and that runner will appear in this list the moment they join — no refresh needed."
-        />
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {others.map((p) => (
-            <li key={p.id}>
-              <Card className="flex items-center justify-between gap-3 py-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span
-                    className={`size-2 shrink-0 rounded-full ${
-                      p.online ? 'bg-surge-500' : 'bg-ink-600'
-                    }`}
-                    title={p.online ? 'Online' : 'Offline'}
-                  />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-bold">{p.displayName}</span>
-                      <TierBadge tier={p.tier} />
-                    </div>
-                    <p className="nums mt-0.5 text-xs text-ink-400">
-                      {p.rating}
-                      {p.distanceM != null && ` · ${metres(p.distanceM)} away`}
-                      {!p.hasLocation && ' · no location'}
-                      {!p.online && ` · ${ago(p.lastSeenAt)}`}
-                    </p>
-                  </div>
-                </div>
-                <span className="nums shrink-0 text-xs text-ink-600">
-                  {p.wins}W {p.losses}L
-                </span>
-              </Card>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="mt-5 flex flex-col items-center gap-1.5 text-center">
+        <Label>Rating</Label>
+        <p className="display text-[72px]">{player.rating}</p>
+        <p className="label-13 label text-ink">{player.tier?.name}</p>
+        <p className="text-[13px] text-slate">
+          Top 12% · up 24 this week
+        </p>
+      </div>
+
+      {/* Nemesis */}
+      <div className="mt-6">
+        <Rule />
+        {nemesis ? (
+          <div className="flex items-center gap-4 py-4">
+            <Shard size={22} tone="garnet" />
+            <div className="min-w-0 flex-1">
+              <Label className="text-garnet">Nemesis</Label>
+              <p className="mt-1 truncate text-[17px] font-700 text-ink">
+                {nemesis.displayName}
+              </p>
+              <p className="nums text-[13px] text-muted">
+                {nemesis.rating} · {nemesis.ratingGap ?? 0} apart
+              </p>
+            </div>
+            <button
+              onClick={() => onFindDuel?.(nemesis)}
+              className="btn btn-outline w-auto shrink-0 px-6 text-[13px]"
+            >
+              Challenge
+            </button>
+          </div>
+        ) : (
+          <p className="py-5 text-[15px] text-slate">
+            No nemesis yet. Nobody else has joined.
+          </p>
+        )}
+        <Rule />
+      </div>
+
+      {/* Duel type */}
+      <div className="mt-1">
+        {DUEL_TYPES.map((option, i) => (
+          <div key={option.key}>
+            {i > 0 && <Rule />}
+            <button
+              onClick={() => setType(option.key)}
+              className="flex min-h-[56px] w-full items-center gap-4 py-3 text-left"
+            >
+              <span
+                className={`size-2.5 shrink-0 rounded-full ${
+                  type === option.key
+                    ? 'bg-indigo'
+                    : 'border border-muted'
+                }`}
+              />
+              <span
+                className={`flex-1 text-[16px] ${
+                  type === option.key ? 'font-700 text-ink' : 'text-muted'
+                }`}
+              >
+                {option.name}
+              </span>
+              <span className="nums text-[13px] text-muted">{option.detail}</span>
+            </button>
+          </div>
+        ))}
+        <Rule />
+      </div>
+
+      <div className="mt-auto flex flex-col gap-2.5 pt-7">
+        <Button onClick={() => onFindDuel?.(null)}>
+          <span className="size-2 rounded-full bg-indigo" />
+          Find duel
+        </Button>
+        <p className="text-center text-[13px] text-muted">
+          Estimated queue 12 seconds · match within 25 rating
+        </p>
+      </div>
     </div>
   )
 }

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { getCurrentPosition } from '../lib/tracker.js'
-import { Button } from '../components/ui.jsx'
+import Crystal from '../components/Crystal.jsx'
+import { Button, Label } from '../components/ui.jsx'
 
 export default function Join() {
   const { join } = useSession()
@@ -36,19 +37,18 @@ export default function Join() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col justify-between bg-ink-950 px-6 safe-top safe-bottom">
-      <header className="pt-16">
-        <h1 className="text-6xl font-black tracking-tighter text-ink-50">Gap</h1>
-        <p className="mt-3 max-w-xs text-base leading-relaxed text-ink-400">
-          Find the runners around you. Race them head to head. Close the gap.
+    <div className="flex min-h-dvh flex-col justify-between bg-paper px-6 safe-t safe-b">
+      <header className="pt-10">
+        <Crystal size={70} />
+        <h1 className="display mt-8 text-center text-[62px]">Gap</h1>
+        <p className="mx-auto mt-3 max-w-[16rem] text-center text-[15px] leading-relaxed text-slate">
+          Running has never had a rank mode.
         </p>
       </header>
 
       <form onSubmit={submit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-ink-400">
-            What should we call you?
-          </span>
+          <span className="label text-muted">What should we call you?</span>
           <input
             type="text"
             autoComplete="nickname"
@@ -58,19 +58,19 @@ export default function Join() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
-            className="w-full rounded-2xl border border-ink-700 bg-ink-900 px-4 py-4
-                       text-xl text-ink-50 placeholder:text-ink-600
-                       focus:border-surge-500 focus:outline-none"
+            className="min-h-[58px] w-full border-b border-ink bg-transparent pb-3
+                       text-[22px] font-700 text-ink placeholder:text-muted
+                       focus:outline-none"
           />
         </label>
 
-        {error && <p className="text-sm text-flare-400">{error}</p>}
+        {error && <p className="text-[13px] text-garnet">{error}</p>}
 
-        <Button type="submit" size="lg" disabled={busy || name.trim().length < 2}>
+        <Button type="submit" disabled={busy || name.trim().length < 2}>
           {busy ? (stage ?? 'Joining…') : 'Join'}
         </Button>
 
-        <p className="pb-2 text-center text-xs leading-relaxed text-ink-600">
+        <p className="pb-2 text-center text-[13px] leading-relaxed text-muted">
           We ask for your location so nearby runners can find you. Say no and you
           still get in — you just will not appear on anyone&apos;s radar.
         </p>

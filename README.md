@@ -1,119 +1,127 @@
-# Gap
+# Gapped
 
-A competitive platform for real-world running. Players join on their phone with
-a display name, find each other by location and by skill rating, and challenge
-each other head-to-head in a live battle. ELO ratings, ranked tiers, and a
-leaderboard.
+**Racing apps exist. Running has never had a rank mode.**
 
-Full mobile web is the target.
+Gapped is competitive matchmaking for real-world running. You join on your
+phone, find runners near you at your level, and duel them head to head. During
+a duel each phone shows one number the size of your palm: the gap in metres
+between you and your opponent, green when you lead and garnet when you trail.
+Win and your rating climbs. That is the whole game.
+
+## Team
+
+| Name | Role |
+| --- | --- |
+| _(fill in)_ | _(fill in)_ |
+
+## What it does
+
+- **Join in one tap.** A display name, nothing else. No password, no email, no
+  verification code. The player record lives in `localStorage`, so a reload
+  drops you straight back on the home screen.
+- **Find someone worth racing.** The lobby ranks every runner by a blend of how
+  near they are and how close their rating is, with toggles for pure distance
+  or pure rating gap. Runners without location are shown at the bottom rather
+  than hidden.
+- **Duel head to head.** Challenge someone, both phones count down together,
+  and the live screen shows the gap between you updating as you run.
+- **Climb the ladder.** ELO ratings from 1000, Sapphire I through V, and a
+  ladder that marks your own row and your nemesis — the runner closest to you
+  on rating.
+- **Trust the distance.** GPS is the risky part, so it has its own unlinked
+  test bench at `/debug`: start, walk a measured 100 m, and confirm the counter
+  lands inside 10%.
+
+## Design
+
+The visual direction is **Shard Mono** — a Swiss-minimal editorial base that
+earns its gamification. Warm off-white paper, near-black ink, hairline rules
+and generous white space. No cards, no grey fills, no shadows; structure comes
+from 1px lines alone. Archivo throughout, 900-weight numerals with tight
+negative tracking, and 11–13px uppercase labels at 0.22em.
+
+Exactly one accent — indigo `#4F46E5` — plus garnet `#A43F5E`, reserved for the
+nemesis and for trailing in a duel. Nothing else in the app carries colour.
+
+The one non-typographic element is the crystal: a faceted sapphire built in
+pure CSS from stacked clip-path polygons, with white and navy facet overlays
+faking cut faces, two bright slivers down the spine, and a bar of light
+sweeping across on a slow gleam. It drifts vertically over 5.5 seconds with a
+hairline ellipse beneath that squeezes in sync. It scales from 78px on the home
+screen down to 13px for a ladder row.
+
+Every touch target is at least 56px.
 
 ## Stack
 
-A single-node service:
+A single Node process serves everything from one origin, so there is no CORS to
+configure and nothing to deploy separately.
 
-- **Fastify** for HTTP, with the **`ws`** library for WebSockets on the same server.
-- **SQLite** (`better-sqlite3`) for storage.
-- **Vite + React + Tailwind** frontend, built to static files and served by that
-  same Fastify process — **same origin, so there is no CORS to configure**.
-- **Plain JavaScript.** No TypeScript, no test suite.
+- **Fastify** for HTTP, with the **`ws`** library for WebSockets on the same server
+- **SQLite** via `better-sqlite3`
+- **Vite + React + Tailwind v4**, built to static files and served by that same
+  Fastify process
+- **Plain JavaScript.** No TypeScript, no test suite
 
 ```
-server/            Fastify service
+server/
   config.js        every tunable, read from the environment
-  index.js         HTTP + static + WebSocket upgrade
-  db/              schema and data access (better-sqlite3)
+  index.js         HTTP, static files, and the WebSocket upgrade
+  db/              schema, migrations, data access
   lib/             elo, geo, ids, validation, serializers
-  routes/          REST endpoints (join, players, leaderboard)
-  ws/              the live battle hub
-client/            Vite + React + Tailwind frontend
-  src/pages/       Join, Home, Radar, Battle, Leaderboard, Profile
-  src/state/       session context, wraps the socket
-  src/lib/         api client, socket, GPS tracker
+  routes/          join, players, leaderboard
+  ws/hub.js        presence, player-list broadcast, duels
+client/src/
+  pages/           Join, Home, Challenge, Battle, Leaderboard, Profile, Debug
+  components/      Crystal, ui primitives, challenge and result sheets
+  lib/             api, socket, GPS tracker, ranking
+  state/           session context
 ```
 
 ## Running it
 
 ```bash
 npm install
-npm run build     # builds the frontend into client/dist
-npm start         # serves API + frontend on one port
+npm run build     # builds the client into client/dist
+npm start         # serves API and frontend on one port
 ```
 
-For frontend work, run the API and the Vite dev server side by side — Vite
-proxies `/api` and `/ws` through to Fastify:
+Then open `http://localhost:3000`.
+
+For frontend work, run both and let Vite proxy `/api` and `/ws` through:
 
 ```bash
 npm run dev        # Fastify on :3000, restarts on change
 npm run dev:client # Vite on :5173
 ```
 
-## Joining
-
-There are no passwords and no verification step. `POST /api/join` with a display
-name creates a player at a rating of 1000 and returns the record; the client
-keeps it in `localStorage`, so a reload goes straight to the home screen. The
-player id in that record is the credential for every later call, sent as the
-`x-player-id` header.
-
-Location is always optional. The browser is asked at join and again each time
-the home screen mounts, but a refusal still joins — coordinates are simply left
-null and that player does not appear on anyone's radar.
-
-## Configuration
-
-Copy `.env.example`. The two that matter for deployment:
+### Configuration
 
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `PORT` | `3000` | Railway injects this; we fall back to 3000 locally. |
-| `DATABASE_PATH` | `./data/gap.db` | The SQLite file. Point it at a mounted volume in production. |
+| `DATABASE_PATH` | `./data/gap.db` | Point at a mounted volume in production. |
 | `HOST` | `0.0.0.0` | |
-| `NODE_ENV` | `production` on Railway | Only affects log verbosity now. |
 | `DISCOVERY_RADIUS_M` | `5000` | How far away an opponent can be. |
 | `DISCOVERY_RATING_SPREAD` | `250` | How far apart two ratings can be and still match. |
-| `PRESENCE_TTL_MS` | `90000` | How long since last contact still counts as online. |
 
-### Deploying to Railway
+### Deploying
 
-`railway.json` sets the build and start commands. Add a volume, mount it at
-`/data`, and set `DATABASE_PATH=/data/gap.db` — otherwise the database lives in
-the container filesystem and disappears on every redeploy.
+`railway.json` carries the build command, start command and a `/api/health`
+check. Add a volume, mount it at `/data`, and set `DATABASE_PATH=/data/gap.db` —
+without it the database lives in the container and every redeploy wipes every
+rating and duel.
 
-## How a race works
+Geolocation and the screen wake lock both require a secure context, so the app
+only fully works over HTTPS. `localhost` counts; a bare IP address does not.
 
-1. Both runners share location. Discovery returns opponents inside
-   `DISCOVERY_RADIUS_M` and within `DISCOVERY_RATING_SPREAD` rating, sorted by
-   how evenly matched they are.
-2. One sends a challenge over the socket, naming a distance. It expires after 60
-   seconds if unanswered.
-3. On accept, the server creates the match and sends both phones a shared
-   `startsAt`, five seconds out, so neither starts early.
-4. Each phone tracks its own GPS and reports progress about once a second. The
-   server clamps progress so it only ever moves forward, and relays it to the
-   opponent — that relayed number is the gap.
-5. First to the distance wins. Ratings settle in a single transaction, so a
-   match can never be scored twice.
+## Known limits
 
-Drop out mid-race and you have 45 seconds to reconnect before the win goes to
-your opponent.
-
-### Ratings
-
-Standard ELO from 1000, with a higher K for a player's first ten races so new
-runners reach their real rating quickly. Tiers: Bronze, Silver (900), Gold
-(1100), Platinum (1300), Diamond (1500), Apex (1700).
-
-### GPS honesty
-
-The tracker discards fixes worse than 35 m accuracy, ignores movements under
-3 m (drift while standing still), and drops samples implying more than 12 m/s.
-This is the obvious first line of defence, not a finished anti-cheat story.
-
-## What is not built yet
-
-- Any real authentication. The player id from `localStorage` is the only
-  credential, so anyone holding it is that player. Fine for a private test,
+- **No real authentication.** The player id in `localStorage` is the only
+  credential, so anyone holding one is that player. Fine for a private demo,
   not for public release.
-- Rematch, race history against a specific rival, friends.
-- Anything stronger than the GPS sanity checks above.
-- Tiers are cosmetic — no placement races or seasonal resets.
+- **GPS drift is not filtered.** The tracker rejects fixes worse than 25 m
+  accuracy and any implying over 11 m/s, but has no minimum-step floor, so
+  standing still slowly accumulates distance.
+- Duel modes beyond the distance duel, separate-course duels, and Strava
+  seeding are specified but not built.

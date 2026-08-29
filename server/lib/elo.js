@@ -5,11 +5,11 @@ export const RATING_FLOOR = 100
 // A new player starts at 1000, which is Bronze — the bottom of the ladder.
 // "Apex Nemesis" is a title for whoever is rank one, not a tier.
 export const TIERS = [
-  { key: 'bronze', name: 'Bronze', floor: 0, colour: '#b2724a' },
-  { key: 'silver', name: 'Silver', floor: 1100, colour: '#9aa7b4' },
-  { key: 'gold', name: 'Gold', floor: 1250, colour: '#e0b23c' },
-  { key: 'platinum', name: 'Platinum', floor: 1400, colour: '#5fd6c4' },
-  { key: 'diamond', name: 'Diamond', floor: 1550, colour: '#6aa8ff' },
+  { key: 's1', name: 'Sapphire I', floor: 0, colour: '#4f46e5' },
+  { key: 's2', name: 'Sapphire II', floor: 1100, colour: '#4f46e5' },
+  { key: 's3', name: 'Sapphire III', floor: 1250, colour: '#4f46e5' },
+  { key: 's4', name: 'Sapphire IV', floor: 1400, colour: '#4f46e5' },
+  { key: 's5', name: 'Sapphire V', floor: 1550, colour: '#4f46e5' },
 ]
 
 export function tierFor(rating) {

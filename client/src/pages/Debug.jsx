@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createTracker, MAX_ACCURACY_M, MAX_SPEED_MPS } from '../lib/tracker.js'
-import { Button, Card } from '../components/ui.jsx'
+import { Button, Label } from '../components/ui.jsx'
 
 const paceLabel = (msPerKm) => {
   if (msPerKm == null || !Number.isFinite(msPerKm)) return '—:—'
@@ -60,92 +60,92 @@ export default function Debug() {
   )
 
   return (
-    <div className="flex min-h-dvh flex-col gap-4 bg-ink-950 px-4 py-6 safe-top safe-bottom">
+    <div className="flex min-h-dvh flex-col gap-4 bg-paper px-4 py-6 safe-top safe-bottom">
       <header>
-        <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-ink-400">
+        <p className="label text-muted">
           GPS test bench
         </p>
-        <h1 className="text-2xl font-black tracking-tight">/debug</h1>
-        <p className="mt-1 text-xs text-ink-600">
+        <h1 className="display text-[34px]">/debug</h1>
+        <p className="mt-1 text-xs text-muted">
           Rejecting accuracy &gt; {MAX_ACCURACY_M} m and speed &gt; {MAX_SPEED_MPS} m/s.
         </p>
       </header>
 
       {error && (
-        <p className="rounded-2xl bg-flare-500/10 px-4 py-3 text-sm text-flare-400">{error}</p>
+        <p className="rounded-2xl border border-garnet px-4 py-3 text-sm text-garnet">{error}</p>
       )}
 
       {/* Total distance — the number under test */}
-      <Card className="text-center">
-        <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-ink-400">
+      <div className="border-y border-rule py-6 text-center">
+        <p className="label text-muted">
           Total distance
         </p>
-        <p className="nums text-7xl font-black leading-none tracking-tighter">
+        <p className="display text-[76px]">
           {total.toFixed(1)}
         </p>
-        <p className="nums mt-1 text-sm text-ink-400">metres</p>
-      </Card>
+        <p className="nums mt-1 text-sm text-muted">metres</p>
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Card>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-ink-400">
+        <div className="border-b border-rule py-5">
+          <p className="label text-muted">
             Pace (last 30 s)
           </p>
           <p className="nums text-2xl font-bold">{paceLabel(state?.paceMsPerKm)}</p>
-          <p className="text-[11px] text-ink-600">min / km</p>
-        </Card>
-        <Card>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-ink-400">
+          <p className="text-[11px] text-muted">min / km</p>
+        </div>
+        <div className="border-b border-rule py-5">
+          <p className="label text-muted">
             Last accuracy
           </p>
           <p
             className={`nums text-2xl font-bold ${
               state?.accuracy == null
-                ? 'text-ink-400'
+                ? 'text-muted'
                 : state.accuracy > MAX_ACCURACY_M
-                  ? 'text-flare-400'
-                  : 'text-surge-400'
+                  ? 'text-garnet'
+                  : 'text-indigo'
             }`}
           >
             {state?.accuracy == null ? '—' : `${state.accuracy.toFixed(0)} m`}
           </p>
-          <p className="text-[11px] text-ink-600">
+          <p className="text-[11px] text-muted">
             {state?.lastRejection ? `rejected: ${state.lastRejection}` : 'accepted'}
           </p>
-        </Card>
+        </div>
       </div>
 
-      <Card className="grid grid-cols-3 gap-2 text-center">
+      <div className="grid grid-cols-3 gap-2 border-b border-rule py-5 text-center">
         <div>
-          <p className="nums text-2xl font-bold text-surge-400">{accepted}</p>
-          <p className="text-[11px] uppercase tracking-wider text-ink-400">Accepted</p>
+          <p className="nums text-2xl font-bold text-indigo">{accepted}</p>
+          <p className="label text-muted">Accepted</p>
         </div>
         <div>
-          <p className="nums text-2xl font-bold text-flare-400">{rejected}</p>
-          <p className="text-[11px] uppercase tracking-wider text-ink-400">Rejected</p>
+          <p className="nums text-2xl font-bold text-garnet">{rejected}</p>
+          <p className="label text-muted">Rejected</p>
         </div>
         <div>
           <p className="nums text-2xl font-bold">{ratio == null ? '—' : `${ratio}%`}</p>
-          <p className="text-[11px] uppercase tracking-wider text-ink-400">Kept</p>
+          <p className="label text-muted">Kept</p>
         </div>
-      </Card>
+      </div>
 
-      <Card className="grid grid-cols-3 gap-2 text-center">
+      <div className="grid grid-cols-3 gap-2 border-b border-rule py-5 text-center">
         <div>
           <p className="nums text-lg font-bold">{clock(state?.elapsedMs ?? 0)}</p>
-          <p className="text-[11px] uppercase tracking-wider text-ink-400">Elapsed</p>
+          <p className="label text-muted">Elapsed</p>
         </div>
         <div>
-          <p className="nums text-lg font-bold text-flare-400">
+          <p className="nums text-lg font-bold text-garnet">
             {state?.rejectedAccuracy ?? 0}
           </p>
-          <p className="text-[11px] uppercase tracking-wider text-ink-400">Bad acc.</p>
+          <p className="label text-muted">Bad acc.</p>
         </div>
         <div>
-          <p className="nums text-lg font-bold text-flare-400">{state?.rejectedSpeed ?? 0}</p>
-          <p className="text-[11px] uppercase tracking-wider text-ink-400">Too fast</p>
+          <p className="nums text-lg font-bold text-garnet">{state?.rejectedSpeed ?? 0}</p>
+          <p className="label text-muted">Too fast</p>
         </div>
-      </Card>
+      </div>
 
       <div className="mt-auto flex flex-col gap-3 pt-4">
         <div className="flex gap-3">
@@ -160,7 +160,7 @@ export default function Debug() {
             Reset
           </Button>
         </div>
-        <p className="text-center text-[11px] leading-relaxed text-ink-600">
+        <p className="text-center text-[11px] leading-relaxed text-muted">
           Walk a measured 100 m in a straight line with the screen on. The total
           should land within 10 % — that is 90 to 110 m.
         </p>

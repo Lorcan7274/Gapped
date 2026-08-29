@@ -2,129 +2,96 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { useSession } from '../state/session.jsx'
 import { clock, distanceLabel, signed } from '../lib/format.js'
-import { Button, Card, TierBadge, Stat, Spinner } from '../components/ui.jsx'
+import { Shard } from '../components/Crystal.jsx'
+import { Button, Label, Rule, Spinner } from '../components/ui.jsx'
 
 export default function Profile() {
-  const { player, meta, leave } = useSession()
+  const { player, leave } = useSession()
   const [matches, setMatches] = useState(null)
 
   useEffect(() => {
+    if (!player) return
     api('/api/me/matches', { playerId: player.id })
-      .then((data) => setMatches(data.matches))
+      .then((d) => setMatches(d.matches))
       .catch(() => setMatches([]))
-  }, [player.id])
+  }, [player?.id])
 
   if (!player) return null
 
-  const nextTier = (meta?.tiers ?? []).find((t) => t.floor > player.rating)
-  const winRate =
-    player.games > 0 ? Math.round((player.wins / player.games) * 100) : null
-
   return (
-    <div className="flex flex-col gap-4 px-4 pb-28 pt-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-black tracking-tight">{player.displayName}</h2>
-          <div className="mt-1.5 flex items-center gap-2">
-            <TierBadge tier={player.tier} size="lg" />
-            {player.rank && (
-              <span className="nums text-sm text-ink-400">rank #{player.rank}</span>
-            )}
-          </div>
+    <div className="px-6 pb-32 pt-6">
+      <div className="flex items-center gap-4">
+        <Shard size={34} />
+        <div className="min-w-0">
+          <h2 className="display truncate text-[34px]">{player.displayName}</h2>
+          <p className="label mt-1 text-muted">{player.tier?.name}</p>
         </div>
-        <span className="nums text-5xl font-black leading-none">{player.rating}</span>
       </div>
 
-      {nextTier && (
-        <Card>
-          <p className="text-sm text-ink-400">
-            <span className="nums font-bold text-ink-50">
-              {nextTier.floor - player.rating}
-            </span>{' '}
-            rating to{' '}
-            <span className="font-bold" style={{ color: nextTier.colour }}>
-              {nextTier.name}
-            </span>
-          </p>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink-800">
-            <div
-              className="h-full rounded-full transition-[width] duration-500"
-              style={{
-                width: `${Math.min(100, Math.max(4, (player.rating / nextTier.floor) * 100))}%`,
-                backgroundColor: nextTier.colour,
-              }}
-            />
-          </div>
-        </Card>
-      )}
-
-      <Card className="grid grid-cols-4 gap-2">
-        <Stat label="Races" value={player.games} />
-        <Stat label="Won" value={player.wins} tone="good" />
-        <Stat label="Lost" value={player.losses} tone="bad" />
-        <Stat label="Win %" value={winRate == null ? '—' : `${winRate}%`} />
-      </Card>
-
-      <Card className="grid grid-cols-2 gap-2">
-        <Stat label="Peak rating" value={player.peakRating} />
-        <Stat label="Draws" value={player.draws} />
-      </Card>
-
-      <h3 className="mt-2 text-sm font-bold uppercase tracking-wider text-ink-400">
-        Recent races
-      </h3>
-      {matches == null ? (
-        <div className="flex justify-center py-8">
-          <Spinner />
+      <div className="mt-8 flex items-end justify-between border-y border-rule py-6">
+        <div>
+          <Label>Rating</Label>
+          <p className="display mt-1.5 text-[56px]">{player.rating}</p>
         </div>
-      ) : matches.length === 0 ? (
-        <p className="py-4 text-sm text-ink-400">
-          No finished races yet. Head to Nearby and challenge someone.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {matches.map((m) => {
-            const won = m.winnerId === player.id
-            const drew = m.winnerId == null
-            const delta =
-              m.you.ratingAfter != null ? m.you.ratingAfter - m.you.ratingBefore : null
-            return (
-              <li key={m.id}>
-                <Card className="flex items-center gap-3 py-3">
-                  <span
-                    className={`w-9 shrink-0 text-center text-xs font-black uppercase ${
-                      drew ? 'text-ink-400' : won ? 'text-surge-400' : 'text-flare-400'
-                    }`}
-                  >
-                    {drew ? 'Tie' : won ? 'Win' : 'Loss'}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">
-                      vs {m.opponent.displayName}
-                    </p>
-                    <p className="nums text-xs text-ink-400">
-                      {distanceLabel(m.distanceM)} · {clock(m.you.elapsedMs)}
-                    </p>
-                  </div>
-                  {delta != null && (
-                    <span
-                      className={`nums text-sm font-bold ${
-                        delta >= 0 ? 'text-surge-400' : 'text-flare-400'
-                      }`}
-                    >
-                      {signed(delta)}
-                    </span>
-                  )}
-                </Card>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+        <div className="text-right">
+          <Label>Record</Label>
+          <p className="display nums mt-1.5 text-[34px]">
+            {player.wins}–{player.losses}
+          </p>
+        </div>
+      </div>
 
-      <Button variant="outline" onClick={leave} className="mt-4">
-        Leave
-      </Button>
+      <div className="mt-8">
+        <Label>Recent duels</Label>
+        {matches === null ? (
+          <div className="py-8"><Spinner /></div>
+        ) : matches.length === 0 ? (
+          <p className="mt-3 text-[15px] text-slate">
+            No duels yet. Head to the lobby and challenge someone.
+          </p>
+        ) : (
+          <ul className="mt-4">
+            {matches.map((m, i) => {
+              const won = m.winnerId === player.id
+              const delta =
+                m.you.ratingAfter != null ? m.you.ratingAfter - m.you.ratingBefore : null
+              return (
+                <li key={m.id} className={i > 0 ? 'border-t border-rule' : ''}>
+                  <div className="flex min-h-[56px] items-center gap-4 py-3.5">
+                    <span className="label w-12 shrink-0 text-muted">
+                      {m.winnerId == null ? 'Tie' : won ? 'Win' : 'Loss'}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px]">
+                        {m.opponent.displayName}
+                      </p>
+                      <p className="nums text-[13px] text-muted">
+                        {distanceLabel(m.distanceM)} · {clock(m.you.elapsedMs)}
+                      </p>
+                    </div>
+                    {delta != null && (
+                      <span
+                        className={`nums shrink-0 text-[15px] font-700 ${
+                          delta >= 0 ? 'text-indigo' : 'text-garnet'
+                        }`}
+                      >
+                        {signed(delta)}
+                      </span>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+
+      <div className="mt-10">
+        <Rule />
+        <Button variant="quiet" className="mt-4" onClick={leave}>
+          Leave
+        </Button>
+      </div>
     </div>
   )
 }

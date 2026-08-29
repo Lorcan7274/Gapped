@@ -1,21 +1,52 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api.js'
 import { useSession } from '../state/session.jsx'
-import { TierBadge, Spinner, EmptyState, Card } from '../components/ui.jsx'
+import { Shard } from '../components/Crystal.jsx'
+import { Label, Spinner } from '../components/ui.jsx'
+
+/** Ranked bands read as Sapphire grades — never Gold or Silver. */
+const BANDS = [
+  { name: 'Sapphire V', floor: 1550 },
+  { name: 'Sapphire IV', floor: 1400 },
+  { name: 'Sapphire III', floor: 1250 },
+  { name: 'Sapphire II', floor: 1100 },
+  { name: 'Sapphire I', floor: 0 },
+]
+
+const bandFor = (rating) => BANDS.find((b) => rating >= b.floor) ?? BANDS.at(-1)
 
 export default function Leaderboard() {
-  const { player } = useSession()
-  const [rows, setRows] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { player, players } = useSession()
+  const [rows, setRows] = useState(null)
 
   useEffect(() => {
     api('/api/leaderboard?limit=100')
-      .then((data) => setRows(data.players))
+      .then((d) => setRows(d.players))
       .catch(() => setRows([]))
-      .finally(() => setLoading(false))
   }, [])
 
-  if (loading) {
+  // Fall back to the live roster so the sheet is never empty pre-duels.
+  const ladder = useMemo(() => {
+    const source = rows && rows.length > 0 ? rows : players
+    return [...source]
+      .sort((a, b) => b.rating - a.rating)
+      .map((p, i) => ({ ...p, rank: i + 1 }))
+  }, [rows, players])
+
+  // The leaderboard endpoint has no viewer, so it cannot supply a rating gap.
+  // Compute it here against your own rating instead of trusting a field that
+  // is undefined for every row.
+  const nemesisId = useMemo(() => {
+    if (!player) return null
+    const others = ladder.filter((p) => p.id !== player.id)
+    if (others.length === 0) return null
+    return [...others].sort(
+      (a, b) =>
+        Math.abs(a.rating - player.rating) - Math.abs(b.rating - player.rating)
+    )[0].id
+  }, [ladder, player])
+
+  if (rows === null) {
     return (
       <div className="flex justify-center py-20">
         <Spinner />
@@ -23,60 +54,77 @@ export default function Leaderboard() {
     )
   }
 
-  if (rows.length === 0) {
-    return (
-      <EmptyState
-        icon="🏁"
-        title="Nobody has raced yet"
-        body="The leaderboard fills up as soon as the first head-to-head is settled. Be first."
-      />
-    )
-  }
+  // Group into bands, dropping empty ones.
+  const grouped = BANDS.map((band) => ({
+    band,
+    entries: ladder.filter((p) => bandFor(p.rating).name === band.name),
+  })).filter((g) => g.entries.length > 0)
 
   return (
-    <div className="flex flex-col gap-4 px-4 pb-28 pt-4">
-      <h2 className="text-2xl font-black tracking-tight">Leaderboard</h2>
-      <Card className="p-0">
-        <ul className="divide-y divide-ink-800">
-          {rows.map((row) => {
-            const isMe = row.id === player?.id
-            return (
-              <li
-                key={row.id}
-                className={`flex items-center gap-3 px-4 py-3 ${
-                  isMe ? 'bg-surge-500/10' : ''
-                }`}
-              >
-                <span
-                  className={`nums w-8 shrink-0 text-sm font-bold ${
-                    row.rank <= 3 ? 'text-volt-400' : 'text-ink-400'
+    <div className="px-6 pb-32 pt-6">
+      <h2 className="display text-[34px]">Ladder</h2>
+      <p className="mt-1 text-[13px] text-slate">Ranked by rating</p>
+
+      <div className="mt-8 flex flex-col gap-9">
+        {grouped.map(({ band, entries }) => (
+          <section key={band.name}>
+            <div className="flex items-center gap-2.5 border-b border-ink pb-2.5">
+              <Shard size={14} still />
+              <span className="label text-ink">{band.name}</span>
+            </div>
+
+            {entries.map((row, i) => {
+              const isYou = row.id === player?.id
+              const isNemesis = row.id === nemesisId
+              if (isYou) {
+                return (
+                  <div
+                    key={row.id}
+                    className="my-1.5 flex min-h-[58px] items-center gap-4 rounded-xl bg-ink px-4 py-3.5 text-paper"
+                  >
+                    <span className="nums w-7 shrink-0 text-[15px] font-700">
+                      {row.rank}
+                    </span>
+                    {row.rank === 1 && <span className="text-[13px]">♦</span>}
+                    <span className="flex-1 truncate text-[16px] font-700">
+                      {row.displayName}
+                    </span>
+                    <span
+                      className="label shrink-0"
+                      style={{ color: '#A5A0F5' }}
+                    >
+                      You
+                    </span>
+                    <span className="nums w-12 shrink-0 text-right text-[16px] font-900">
+                      {row.rating}
+                    </span>
+                  </div>
+                )
+              }
+              return (
+                <div
+                  key={row.id}
+                  className={`flex min-h-[56px] items-center gap-4 py-3.5 ${
+                    i > 0 ? 'border-t border-rule' : ''
                   }`}
                 >
-                  {row.rank}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-semibold">{row.displayName}</span>
-                    {isMe && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-surge-400">
-                        you
-                      </span>
-                    )}
-                  </div>
-                  <p className="nums text-xs text-ink-400">
-                    {row.wins}W · {row.losses}L
-                    {row.draws > 0 ? ` · ${row.draws}D` : ''}
-                  </p>
+                  <span className="nums w-7 shrink-0 text-[15px] text-muted">
+                    {row.rank}
+                  </span>
+                  {isNemesis && <Shard size={13} tone="garnet" still />}
+                  {row.rank === 1 && (
+                    <span className="label text-indigo">Apex</span>
+                  )}
+                  <span className="flex-1 truncate text-[16px]">{row.displayName}</span>
+                  <span className="nums w-12 shrink-0 text-right text-[16px] font-700">
+                    {row.rating}
+                  </span>
                 </div>
-                <TierBadge tier={row.tier} />
-                <span className="nums w-12 shrink-0 text-right font-bold">
-                  {row.rating}
-                </span>
-              </li>
-            )
-          })}
-        </ul>
-      </Card>
+              )
+            })}
+          </section>
+        ))}
+      </div>
     </div>
   )
 }
