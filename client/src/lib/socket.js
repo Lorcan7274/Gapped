@@ -3,7 +3,7 @@
  * Mobile data drops constantly, so reconnection is the normal case, not an
  * error path: we back off, jitter, and resume with the same id.
  */
-export function createSocket({ playerId, onMessage, onStatus, onDeadPlayer }) {
+export function createSocket({ playerId, token, onMessage, onStatus, onDeadPlayer }) {
   let ws = null
   let attempt = 0
   let heartbeat = null
@@ -12,7 +12,10 @@ export function createSocket({ playerId, onMessage, onStatus, onDeadPlayer }) {
 
   const url = () => {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
-    return `${scheme}://${location.host}/ws?playerId=${encodeURIComponent(playerId)}`
+    const credential = token
+      ? `token=${encodeURIComponent(token)}`
+      : `playerId=${encodeURIComponent(playerId)}`
+    return `${scheme}://${location.host}/ws?${credential}`
   }
 
   function connect() {

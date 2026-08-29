@@ -6,7 +6,9 @@ import fastifyStatic from '@fastify/static'
 
 import { PORT, HOST, DATABASE_PATH, IS_PRODUCTION } from './config.js'
 import { MIGRATED } from './db/index.js'
-import { getPlayer, touchPlayer } from './db/players.js'
+import { getPlayer, touchPlayer, hasCredentials } from './db/players.js'
+import { resolveSession, purgeExpiredSessions } from './db/sessions.js'
+import authRoutes from './routes/auth.js'
 import joinRoutes from './routes/join.js'
 import playerRoutes from './routes/players.js'
 import { createHub } from './ws/hub.js'
@@ -29,8 +31,22 @@ const app = Fastify({
 // the body for convenience. A 404 (not 401) tells the client the id is dead
 // and it should clear storage and show the join screen again.
 app.decorate('requirePlayer', async (request, reply) => {
-  const id = request.headers['x-player-id'] || request.body?.playerId
-  const player = getPlayer(id)
+  // A session token from sign-in is the credential. The bare player id is
+  // still accepted for accounts created before sign-in existed, so nobody
+  // is locked out of a rating they already earned; it stops working for an
+  // account the moment it gains an email.
+  const token = request.headers.authorization?.replace(/^Bearer\s+/i, '')
+  const session = resolveSession(token)
+  let player = session ? getPlayer(session.player_id) : null
+
+  if (!player) {
+    const legacyId = request.headers['x-player-id'] || request.body?.playerId
+    // getPlayer omits email by design, so ask the database directly —
+    // testing candidate.email here silently accepted every id.
+    const candidate = getPlayer(legacyId)
+    if (candidate && !hasCredentials(candidate.id)) player = candidate
+  }
+
   if (!player) {
     return reply
       .code(404)
@@ -63,6 +79,7 @@ app.get('/api/health', async () => ({
 // list straight out over the sockets.
 const hub = createHub(app.log)
 
+await app.register(authRoutes(() => hub.broadcastPlayers()))
 await app.register(joinRoutes(() => hub.broadcastPlayers()))
 await app.register(playerRoutes)
 
@@ -101,7 +118,11 @@ app.server.on('upgrade', (request, socket, head) => {
 
 /* -------------------------------------------------------------- startup */
 
+const housekeeping = setInterval(purgeExpiredSessions, 3_600_000)
+housekeeping.unref()
+
 async function shutdown(signal) {
+  clearInterval(housekeeping)
   app.log.info({ signal }, 'shutting down')
   hub.close()
   await app.close()

@@ -1,7 +1,7 @@
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from 'react'
-import { api, readPlayer, writePlayer } from '../lib/api.js'
+import { api, readPlayer, writePlayer, readToken, writeToken } from '../lib/api.js'
 import { createSocket } from '../lib/socket.js'
 
 const SessionContext = createContext(null)
@@ -23,6 +23,7 @@ export function SessionProvider({ children }) {
   const [opponentFinished, setOpponentFinished] = useState(false)
 
   const socketRef = useRef(null)
+  const [token, setToken] = useState(readToken)
   const playerId = player?.id ?? null
 
   /* -------------------------------------------------------------- bootstrap */
@@ -35,6 +36,8 @@ export function SessionProvider({ children }) {
   // database was reset, say) so we clear it rather than hang on a dead id.
   const forget = useCallback(() => {
     writePlayer(null)
+    writeToken(null)
+    setToken(null)
     setPlayer(null)
     setPlayers([])
     setStatus('anonymous')
@@ -128,6 +131,7 @@ export function SessionProvider({ children }) {
     if (!playerId || status !== 'ready') return
     const socket = createSocket({
       playerId,
+      token,
       onMessage,
       onStatus: setConnection,
       onDeadPlayer: forget,
@@ -138,22 +142,38 @@ export function SessionProvider({ children }) {
       socketRef.current = null
       setConnection('closed')
     }
-  }, [playerId, status, onMessage, forget])
+  }, [playerId, token, status, onMessage, forget])
 
   const send = useCallback((type, payload) => socketRef.current?.send(type, payload) ?? false, [])
 
   /* ---------------------------------------------------------------- actions */
 
-  const join = useCallback(async (displayName, coords) => {
-    const { player: joined } = await api('/api/join', {
-      method: 'POST',
-      body: { displayName, lat: coords?.lat ?? null, lng: coords?.lng ?? null },
-    })
-    writePlayer(joined)
-    setPlayer(joined)
+  const adopt = useCallback((nextToken, nextPlayer) => {
+    writeToken(nextToken)
+    writePlayer(nextPlayer)
+    setToken(nextToken)
+    setPlayer(nextPlayer)
     setStatus('ready')
-    return joined
+    return nextPlayer
   }, [])
+
+  /** Create an account, carrying over an anonymous player if there is one. */
+  const register = useCallback(async ({ email, password, displayName, coords }) => {
+    const res = await api('/api/auth/register', {
+      method: 'POST',
+      body: {
+        email, password, displayName,
+        lat: coords?.lat ?? null, lng: coords?.lng ?? null,
+        claimPlayerId: readPlayer()?.id ?? null,
+      },
+    })
+    return adopt(res.token, res.player)
+  }, [adopt])
+
+  const login = useCallback(async ({ email, password }) => {
+    const res = await api('/api/auth/login', { method: 'POST', body: { email, password } })
+    return adopt(res.token, res.player)
+  }, [adopt])
 
   /** Push a position. Silently does nothing useful if location was denied. */
   const pushLocation = useCallback(async (coords) => {
@@ -167,19 +187,24 @@ export function SessionProvider({ children }) {
     return updated
   }, [playerId, send])
 
-  const leave = useCallback(() => {
+  const leave = useCallback(async () => {
     socketRef.current?.close()
+    try {
+      await api('/api/auth/logout', { method: 'POST' })
+    } catch {
+      /* the local session is going away regardless */
+    }
     forget()
   }, [forget])
 
   const value = useMemo(() => ({
     player, players, meta, status, connection, notice,
     incoming, outgoing, match, result, opponentProgress, opponentFinished,
-    join, leave, pushLocation, send, setNotice, setOutgoing, setIncoming,
+    register, login, leave, pushLocation, send, setNotice, setOutgoing, setIncoming,
     clearResult: () => setResult(null),
   }), [
     player, players, meta, status, connection, notice, incoming, outgoing,
-    match, result, opponentProgress, opponentFinished, join, leave,
+    match, result, opponentProgress, opponentFinished, register, login, leave,
     pushLocation, send,
   ])
 

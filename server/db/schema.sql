@@ -7,6 +7,10 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS players (
   id                TEXT PRIMARY KEY,
   display_name      TEXT NOT NULL,
+  -- Null for accounts created before sign-in existed. Those keep working
+  -- until someone attaches credentials to them.
+  email             TEXT UNIQUE,
+  password_hash     TEXT,
   rating            INTEGER NOT NULL DEFAULT 1000,
   peak_rating       INTEGER NOT NULL DEFAULT 1000,
   games             INTEGER NOT NULL DEFAULT 0,
@@ -22,7 +26,18 @@ CREATE TABLE IF NOT EXISTS players (
 );
 
 CREATE INDEX IF NOT EXISTS idx_players_rating   ON players (rating DESC);
+CREATE INDEX IF NOT EXISTS idx_players_email    ON players (email);
 CREATE INDEX IF NOT EXISTS idx_players_location ON players (lat, lng);
+
+-- Sign-in issues an opaque token; the token is the credential, not the id.
+CREATE TABLE IF NOT EXISTS sessions (
+  token       TEXT PRIMARY KEY,
+  player_id   TEXT NOT NULL REFERENCES players (id) ON DELETE CASCADE,
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_player ON sessions (player_id);
 
 CREATE TABLE IF NOT EXISTS challenges (
   id            TEXT PRIMARY KEY,

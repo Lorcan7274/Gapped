@@ -63,24 +63,50 @@ function migrateFromPhoneAuth(log = console) {
     db.exec('ALTER TABLE players_migrated RENAME TO players')
     db.exec('CREATE INDEX IF NOT EXISTS idx_players_rating   ON players (rating DESC)')
     db.exec('CREATE INDEX IF NOT EXISTS idx_players_location ON players (lat, lng)')
-    // Nothing reads these any more.
-    db.exec('DROP TABLE IF EXISTS sessions')
+    // The old code-based tables are gone for good. Sessions are recreated
+    // by the schema, so a phone-era database simply loses its old ones.
     db.exec('DROP TABLE IF EXISTS auth_codes')
   })()
   db.pragma('foreign_keys = ON')
   return true
 }
 
+/**
+ * Add sign-in columns to a players table created before accounts existed.
+ * Both are nullable, so every account already in the database keeps working
+ * until someone attaches an email and password to it.
+ */
+function addAccountColumns(log) {
+  const columns = columnsOf('players')
+  const added = []
+  if (!columns.includes('email')) {
+    db.exec('ALTER TABLE players ADD COLUMN email TEXT')
+    db.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_players_email_unique ' +
+      'ON players (email) WHERE email IS NOT NULL'
+    )
+    added.push('email')
+  }
+  if (!columns.includes('password_hash')) {
+    db.exec('ALTER TABLE players ADD COLUMN password_hash TEXT')
+    added.push('password_hash')
+  }
+  if (added.length) log?.warn?.(`added account columns: ${added.join(', ')}`)
+  return added
+}
+
 function migrate(log) {
   const changed = migrateFromPhoneAuth(log)
-  // Harmless no-ops on a database that never had them.
-  db.exec('DROP TABLE IF EXISTS sessions')
   db.exec('DROP TABLE IF EXISTS auth_codes')
+  addAccountColumns(log)
   return changed
 }
 
 // Runs at import, before any other module prepares a statement — those
 // prepares reference display_name and would throw against an old table.
 export const MIGRATED = migrate(console)
+// The schema runs before the migration, so a table the migration dropped
+// needs recreating. Cheap, and idempotent.
+db.exec(fs.readFileSync(path.join(here, 'schema.sql'), 'utf8'))
 
 export const now = () => Date.now()

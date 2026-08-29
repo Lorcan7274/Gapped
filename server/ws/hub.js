@@ -6,6 +6,7 @@ import {
   touchPlayer,
   rankOf,
   allPlayers,
+  hasCredentials,
 } from '../db/players.js'
 import {
   createChallenge,
@@ -26,6 +27,7 @@ import { distanceMetres } from '../lib/geo.js'
 import { normaliseDistance, normaliseCoords } from '../lib/validate.js'
 import { DISCOVERY_RADIUS_M, PRESENCE_TTL_MS } from '../config.js'
 import { db } from '../db/index.js'
+import { resolveSession } from '../db/sessions.js'
 
 // Both runners get a shared countdown so neither starts early.
 const COUNTDOWN_MS = 5_000
@@ -470,11 +472,19 @@ export function createHub(log) {
     // The player id from localStorage is the credential. A stale one (the
     // database was reset, say) is refused so the client can clear it and
     // send the person back to the join screen.
-    const playerId =
-      url.searchParams.get('playerId') ||
-      request.headers['sec-websocket-protocol'] ||
-      ''
-    const player = getPlayer(playerId)
+    const token = url.searchParams.get('token')
+    const session = token ? resolveSession(token) : null
+    let player = session ? getPlayer(session.player_id) : null
+
+    if (!player) {
+      // Same legacy allowance as the HTTP side: a bare id still works for an
+      // account that has never had credentials attached.
+      const legacy = getPlayer(
+        url.searchParams.get('playerId') ||
+        request.headers['sec-websocket-protocol'] || ''
+      )
+      if (legacy && !hasCredentials(legacy.id)) player = legacy
+    }
 
     if (!player) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
