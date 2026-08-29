@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSession } from './state/session.jsx'
 import Join from './pages/Join.jsx'
 import Home from './pages/Home.jsx'
-import Radar from './pages/Radar.jsx'
+import Challenge from './pages/Challenge.jsx'
 import Battle from './pages/Battle.jsx'
 import Leaderboard from './pages/Leaderboard.jsx'
 import Profile from './pages/Profile.jsx'
@@ -12,7 +12,7 @@ import { Spinner, ConnectionDot } from './components/ui.jsx'
 
 const TABS = [
   { key: 'home', label: 'Home', icon: '🏠' },
-  { key: 'radar', label: 'Nearby', icon: '📡' },
+  { key: 'challenge', label: 'Challenge', icon: '⚔️' },
   { key: 'leaderboard', label: 'Ranks', icon: '🏆' },
   { key: 'profile', label: 'You', icon: '👤' },
 ]
@@ -70,7 +70,7 @@ export default function App() {
 
       <main className="flex-1">
         {tab === 'home' && <Home />}
-        {tab === 'radar' && <Radar />}
+        {tab === 'challenge' && <Challenge />}
         {tab === 'leaderboard' && <Leaderboard />}
         {tab === 'profile' && <Profile />}
       </main>

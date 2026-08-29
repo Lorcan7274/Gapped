@@ -10,13 +10,15 @@ export function publicPlayer(row, viewer = null, extra = {}) {
   if (!row) return null
   const tier = tierFor(row.rating)
 
+  // Distance and rating gap are computed here, relative to whoever is
+  // asking, so raw coordinates never leave the server.
   let distanceM = null
-  if (
-    viewer && viewer.id !== row.id &&
-    viewer.lat != null && viewer.lng != null &&
-    row.lat != null && row.lng != null
-  ) {
-    distanceM = Math.round(distanceMetres(viewer.lat, viewer.lng, row.lat, row.lng))
+  let ratingGap = null
+  if (viewer && viewer.id !== row.id) {
+    ratingGap = Math.abs(row.rating - viewer.rating)
+    if (viewer.lat != null && viewer.lng != null && row.lat != null && row.lng != null) {
+      distanceM = Math.round(distanceMetres(viewer.lat, viewer.lng, row.lat, row.lng))
+    }
   }
 
   return {
@@ -33,6 +35,7 @@ export function publicPlayer(row, viewer = null, extra = {}) {
     lastSeenAt: row.last_seen_at,
     createdAt: row.created_at,
     ...(distanceM != null ? { distanceM } : {}),
+    ...(ratingGap != null ? { ratingGap } : {}),
     ...(row.distance_m != null ? { distanceM: row.distance_m } : {}),
     ...(row.rating_gap != null ? { ratingGap: row.rating_gap } : {}),
     ...extra,
