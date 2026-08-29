@@ -25,6 +25,15 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  /* The app is designed as a 390px portrait frame. On a laptop, hold that
+     column and centre it rather than stretching a phone layout across
+     1400px of desk. */
+  #root {
+    max-width: 430px;
+    margin-inline: auto;
+    min-height: 100dvh;
+  }
+
   body {
     background: var(--color-paper);
     color: var(--color-ink);

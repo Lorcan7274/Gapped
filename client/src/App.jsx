@@ -67,7 +67,7 @@ export default function App() {
         {tab === 'you' && <Profile />}
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-rule bg-paper px-2 safe-b">
+      <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-[430px] flex border-t border-rule bg-paper px-2 safe-b">
         {TABS.map((item) => (
           <button
             key={item.key}

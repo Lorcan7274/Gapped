@@ -28,7 +28,7 @@ export default function ChallengeSheet() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-paper px-6 safe-b">
+    <div className="fixed inset-0 z-50 mx-auto max-w-[430px] flex flex-col justify-end bg-paper px-6 safe-b">
       <div className="flex flex-1 flex-col items-center justify-center gap-5 text-center">
         <Shard size={54} tone="garnet" />
         <Label className="text-garnet">Challenge</Label>

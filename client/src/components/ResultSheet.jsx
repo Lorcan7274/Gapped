@@ -22,7 +22,7 @@ export default function ResultSheet() {
   const progress = Math.min(100, Math.max(6, ((result.ratingAfter % 150) / 150) * 100))
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-paper px-6 safe-t safe-b">
+    <div className="fixed inset-0 z-50 mx-auto max-w-[430px] flex flex-col bg-paper px-6 safe-t safe-b">
       <div className="pt-8">
         <Crystal size={66} />
       </div>
