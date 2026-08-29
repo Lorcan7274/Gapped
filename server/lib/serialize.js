@@ -1,5 +1,6 @@
 import { tierFor } from './elo.js'
 import { distanceMetres } from './geo.js'
+import { hasCredentials } from '../db/players.js'
 
 /**
  * What one player may see about another. Raw coordinates never leave the
@@ -49,6 +50,8 @@ export function selfPlayer(row, extra = {}) {
     lat: row.lat,
     lng: row.lng,
     locatedAt: row.located_at,
+    // Tells the client whether "leave" means "sign out" or "lose the account".
+    hasAccount: hasCredentials(row.id),
   }
 }
 
@@ -57,7 +60,9 @@ export function publicMatch(row, viewerId) {
   const viewerIsA = row.a_id === viewerId
   return {
     id: row.id,
+    mode: row.mode ?? 'race',
     distanceM: row.distance_m,
+    durationMs: row.duration_ms ?? null,
     status: row.status,
     startedAt: row.started_at,
     finishedAt: row.finished_at,

@@ -34,4 +34,12 @@ export function normaliseDistance(input) {
   return DISTANCES.includes(n) ? n : null
 }
 
+// Lengths a timed duel can run, in minutes. The wire carries milliseconds.
+export const DURATION_MINUTES = [1, 2, 5, 10, 20, 30]
+
+export function normaliseDuration(input) {
+  const n = Number(input)
+  return Number.isFinite(n) && DURATION_MINUTES.includes(n / 60_000) ? n : null
+}
+
 

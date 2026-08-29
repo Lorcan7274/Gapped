@@ -6,13 +6,16 @@ import { CHALLENGE_TTL_MS } from '../config.js'
 /* ---------------------------------------------------------------- challenges */
 
 const insertChallenge = db.prepare(`
-  INSERT INTO challenges (id, from_id, to_id, distance_m, status, created_at, expires_at)
-  VALUES (@id, @from_id, @to_id, @distance_m, 'pending', @created_at, @expires_at)
+  INSERT INTO challenges (id, from_id, to_id, mode, distance_m, duration_ms, status, created_at, expires_at)
+  VALUES (@id, @from_id, @to_id, @mode, @distance_m, @duration_ms, 'pending', @created_at, @expires_at)
 `)
 
 const selectChallenge = db.prepare('SELECT * FROM challenges WHERE id = ?')
 const setChallengeStatus = db.prepare(
   'UPDATE challenges SET status = ?, responded_at = ? WHERE id = ? AND status = \'pending\''
+)
+const selectStaleChallenges = db.prepare(
+  "SELECT * FROM challenges WHERE status = 'pending' AND expires_at < ?"
 )
 const expireStaleChallenges = db.prepare(
   "UPDATE challenges SET status = 'expired' WHERE status = 'pending' AND expires_at < ?"
@@ -23,13 +26,15 @@ const countLiveFor = db.prepare(`
   WHERE status = 'live' AND (a_id = ? OR b_id = ?)
 `)
 
-export function createChallenge({ fromId, toId, distanceM }) {
+export function createChallenge({ fromId, toId, mode = 'race', distanceM = 0, durationMs = null }) {
   const ts = now()
   const challenge = {
     id: newId(),
     from_id: fromId,
     to_id: toId,
-    distance_m: distanceM,
+    mode,
+    distance_m: distanceM ?? 0,
+    duration_ms: durationMs,
     created_at: ts,
     expires_at: ts + CHALLENGE_TTL_MS,
   }
@@ -45,7 +50,13 @@ export function resolveChallenge(id, status) {
   return setChallengeStatus.run(status, now(), id).changes === 1
 }
 
-export const expireChallenges = () => expireStaleChallenges.run(now()).changes
+/** Expire challenges nobody answered; returns the rows so both sides can be told. */
+export function expireChallenges() {
+  const ts = now()
+  const rows = selectStaleChallenges.all(ts)
+  if (rows.length > 0) expireStaleChallenges.run(ts)
+  return rows
+}
 
 export const hasLiveMatch = (playerId) =>
   countLiveFor.get(playerId, playerId).n > 0
@@ -54,10 +65,10 @@ export const hasLiveMatch = (playerId) =>
 
 const insertMatch = db.prepare(`
   INSERT INTO matches (
-    id, challenge_id, a_id, b_id, distance_m, status,
+    id, challenge_id, a_id, b_id, mode, distance_m, duration_ms, status,
     a_rating_before, b_rating_before, started_at
   ) VALUES (
-    @id, @challenge_id, @a_id, @b_id, @distance_m, 'live',
+    @id, @challenge_id, @a_id, @b_id, @mode, @distance_m, @duration_ms, 'live',
     @a_rating_before, @b_rating_before, @started_at
   )
 `)
@@ -100,13 +111,17 @@ const applyResult = db.prepare(`
   WHERE id = @id
 `)
 
-export function createMatch({ challengeId, aId, bId, distanceM, aRating, bRating }) {
+export function createMatch({
+  challengeId, aId, bId, mode = 'race', distanceM = 0, durationMs = null, aRating, bRating,
+}) {
   const match = {
     id: newId(),
     challenge_id: challengeId ?? null,
     a_id: aId,
     b_id: bId,
-    distance_m: distanceM,
+    mode,
+    distance_m: distanceM ?? 0,
+    duration_ms: durationMs,
     a_rating_before: aRating,
     b_rating_before: bRating,
     started_at: now(),

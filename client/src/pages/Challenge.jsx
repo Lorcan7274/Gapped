@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { sortPlayers, formatDistance, SORTS } from '../lib/ranking.js'
 import { distanceLabel } from '../lib/format.js'
-import { Button, Label, Rule, EmptyState } from '../components/ui.jsx'
+import { durationsFrom } from '../lib/duelTypes.js'
+import { Label, EmptyState } from '../components/ui.jsx'
 
 export default function Challenge() {
   const { player, players, meta, send, outgoing, setOutgoing } = useSession()
@@ -69,7 +70,6 @@ export default function Challenge() {
 
       {others.length === 0 ? (
         <EmptyState
-          icon="🫥"
           title="Nobody to challenge"
           body="Nobody else has joined yet. Open Gap on another phone and they will show up here the moment they join."
         />
@@ -107,19 +107,39 @@ export default function Challenge() {
                 </div>
 
                 {picking === p.id && (
-                  <div className="flex flex-wrap gap-2 pb-4">
-                    {(meta?.distances ?? []).map((d) => (
-                      <button
-                        key={d}
-                        onClick={() => {
-                          send('challenge', { opponentId: p.id, distanceM: d })
-                          setPicking(null)
-                        }}
-                        className="nums label min-h-[56px] rounded-full border border-ink px-5 text-ink"
-                      >
-                        {distanceLabel(d)}
-                      </button>
-                    ))}
+                  <div className="pb-4">
+                    <Label>Race to</Label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {(meta?.distances ?? []).map((d) => (
+                        <button
+                          key={d}
+                          onClick={() => {
+                            send('challenge', { opponentId: p.id, mode: 'race', distanceM: d })
+                            setPicking(null)
+                          }}
+                          className="nums label min-h-[56px] rounded-full border border-ink px-5 text-ink"
+                        >
+                          {distanceLabel(d)}
+                        </button>
+                      ))}
+                    </div>
+                    <Label className="mt-4">Most metres in</Label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {durationsFrom(meta).map((minutes) => (
+                        <button
+                          key={minutes}
+                          onClick={() => {
+                            send('challenge', {
+                              opponentId: p.id, mode: 'timed', durationMs: minutes * 60_000,
+                            })
+                            setPicking(null)
+                          }}
+                          className="nums label min-h-[56px] rounded-full border border-rule px-5 text-slate"
+                        >
+                          {minutes} min
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </li>

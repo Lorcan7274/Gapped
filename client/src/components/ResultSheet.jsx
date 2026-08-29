@@ -6,7 +6,7 @@ import { Button, Label } from './ui.jsx'
 const HEADLINE = { win: 'Victory', loss: 'Defeat', draw: 'Dead heat' }
 
 export default function ResultSheet() {
-  const { result, clearResult, meta } = useSession()
+  const { result, clearResult, meta, send, setNotice } = useSession()
   const [swept, setSwept] = useState(false)
 
   // The rank bar sweeps in from zero once, on mount.
@@ -20,6 +20,19 @@ export default function ResultSheet() {
 
   const delta = result.ratingAfter - result.ratingBefore
   const lost = delta < 0
+  const timed = result.mode === 'timed'
+
+  // Same duel, same terms, straight back at them.
+  const canRematch = Boolean(result.opponent?.id && (timed ? result.durationMs : result.distanceM))
+  const rematch = () => {
+    const sent = send('challenge', timed
+      ? { opponentId: result.opponent.id, mode: 'timed', durationMs: result.durationMs }
+      : { opponentId: result.opponent.id, mode: 'race', distanceM: result.distanceM })
+    clearResult()
+    setNotice(sent
+      ? { tone: 'good', text: `Challenge sent to ${result.opponent.displayName}.` }
+      : { tone: 'bad', text: 'Not connected. Try again in a moment.' })
+  }
 
   // Where a rating sits inside its own tier band. The old version used
   // rating % 150, which meant nothing, and always animated up from zero —
@@ -84,16 +97,22 @@ export default function ResultSheet() {
           />
         </div>
         <p className="nums mt-4 text-[13px] text-slate">
-          {Math.round((result.elapsedMs ?? 0) / 1000)}s ·{' '}
+          {timed
+            ? `You ${Math.round(result.progressM ?? 0)} m · them ${Math.round(result.opponentProgressM ?? 0)} m · `
+            : result.elapsedMs != null
+              ? `${Math.round(result.elapsedMs / 1000)}s · `
+              : ''}
           {lost ? 'rating down' : delta === 0 ? 'rating held' : 'rating up'}
         </p>
       </div>
 
       <div className="mt-auto flex flex-col gap-2 pt-8">
         <Button onClick={clearResult}>Done</Button>
-        <Button variant="quiet" onClick={clearResult}>
-          Rematch
-        </Button>
+        {canRematch && (
+          <Button variant="quiet" onClick={rematch}>
+            Rematch
+          </Button>
+        )}
       </div>
     </div>
   )

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { createTracker } from '../lib/tracker.js'
-import { Button, Label } from '../components/ui.jsx'
+import { Label } from '../components/ui.jsx'
 
 const REPORT_INTERVAL_MS = 2000
+const HOLD_TO_END_MS = 1200
 
 const clock = (ms) => {
   const total = Math.max(0, Math.round(ms / 1000))
@@ -16,6 +17,52 @@ const paceLabel = (msPerKm) => {
 }
 
 /**
+ * Forfeiting mid-run must survive sweaty thumbs and a bouncing screen, so it
+ * is a real press-and-hold: nothing happens until the bar fills.
+ */
+function HoldToEnd({ onDone }) {
+  const [pct, setPct] = useState(0)
+  const timerRef = useRef(null)
+
+  const stop = () => {
+    clearInterval(timerRef.current)
+    timerRef.current = null
+    setPct(0)
+  }
+  const start = () => {
+    if (timerRef.current) return
+    const t0 = Date.now()
+    timerRef.current = setInterval(() => {
+      const next = Math.min(100, ((Date.now() - t0) / HOLD_TO_END_MS) * 100)
+      setPct(next)
+      if (next >= 100) {
+        stop()
+        onDone()
+      }
+    }, 50)
+  }
+  useEffect(() => () => clearInterval(timerRef.current), [])
+
+  return (
+    <button
+      onPointerDown={start}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+      onContextMenu={(e) => e.preventDefault()}
+      className="btn btn-outline relative select-none overflow-hidden touch-none"
+    >
+      <span
+        aria-hidden="true"
+        className="absolute inset-y-0 left-0 bg-garnet/20 transition-none"
+        style={{ width: `${pct}%` }}
+      />
+      <span className="relative">Hold to end</span>
+    </button>
+  )
+}
+
+/**
  * The hero screen. Must read at arm's length in direct sunlight, so it holds
  * the gap and nothing that competes with it.
  */
@@ -23,15 +70,18 @@ export default function Battle() {
   const { match, send, opponentProgress } = useSession()
   const [phase, setPhase] = useState('countdown')
   const [countdown, setCountdown] = useState(null)
-  const [mine, setMine] = useState(0)
+  const [mine, setMine] = useState(match?.resumeProgressM ?? 0)
   const [pace, setPace] = useState(null)
-  const [remainingMs, setRemainingMs] = useState(0)
+  const [timeMs, setTimeMs] = useState(0)
 
+  const timed = match?.mode === 'timed'
   const trackerRef = useRef(null)
-  const startedAtRef = useRef(null)
   const lastReportRef = useRef(0)
   const finishedRef = useRef(false)
   const wakeLockRef = useRef(null)
+  // A reload mid-duel restarts the GPS trail at zero, but the server still
+  // holds the metres already run; resume on top of them instead of at 0.
+  const baseRef = useRef(match?.resumeProgressM ?? 0)
 
   /* Screen wake lock — the phone must not sleep mid-duel. */
   useEffect(() => {
@@ -74,53 +124,69 @@ export default function Battle() {
     return () => clearInterval(timer)
   }, [match])
 
+  /**
+   * The duel clock, anchored to the shared start line rather than to when
+   * this screen mounted, so it survives a reload. A race counts up; a timed
+   * duel counts down and settles itself at zero.
+   */
   useEffect(() => {
     if (phase !== 'running' || !match) return
-    startedAtRef.current = Date.now()
-    const durationMs = (match.durationMs ?? 10 * 60_000)
-    const timer = setInterval(() => {
-      setRemainingMs(durationMs - (Date.now() - startedAtRef.current))
-    }, 250)
+    const tick = () => {
+      const elapsed = Math.max(0, Date.now() - match.startsAt)
+      if (!timed) {
+        setTimeMs(elapsed)
+        return
+      }
+      const left = Math.max(0, match.durationMs - elapsed)
+      setTimeMs(left)
+      if (left <= 0 && !finishedRef.current) {
+        finishedRef.current = true
+        // One last report so the settle sees everything this phone measured.
+        send('match:progress', {
+          matchId: match.id,
+          progressM: baseRef.current + (trackerRef.current?.metres ?? 0),
+          elapsedMs: Math.max(1, elapsed),
+        })
+        setPhase('done')
+      }
+    }
+    tick()
+    const timer = setInterval(tick, 250)
     return () => clearInterval(timer)
-  }, [phase, match])
+  }, [phase, match, timed, send])
 
   useEffect(() => {
     if (phase !== 'running' || !match) return
-    finishedRef.current = false
     const tracker = createTracker({
       onUpdate: ({ metres, paceMsPerKm }) => {
-        setMine(metres)
+        const total = baseRef.current + metres
+        setMine(total)
         setPace(paceMsPerKm)
         if (finishedRef.current) return
 
         const now = Date.now()
+        const elapsedMs = Math.max(1, now - match.startsAt)
 
-        // Crossing the line ends the duel. Reported once — the server
-        // ignores anything after the match leaves 'live'.
-        if (match.distanceM && metres >= match.distanceM) {
+        // Crossing the line ends a race. Reported once — the server ignores
+        // anything after the match leaves 'live'. Timed duels have no line;
+        // the clock effect above closes them out.
+        if (!timed && match.distanceM && total >= match.distanceM) {
           finishedRef.current = true
-          send('match:finish', {
-            matchId: match.id,
-            elapsedMs: now - startedAtRef.current,
-          })
+          send('match:finish', { matchId: match.id, elapsedMs })
           setPhase('done')
           return
         }
 
         if (now - lastReportRef.current >= REPORT_INTERVAL_MS) {
           lastReportRef.current = now
-          send('match:progress', {
-            matchId: match.id,
-            progressM: metres,
-            elapsedMs: now - startedAtRef.current,
-          })
+          send('match:progress', { matchId: match.id, progressM: total, elapsedMs })
         }
       },
     })
     trackerRef.current = tracker
     tracker.start()
     return () => tracker.stop()
-  }, [phase, match, send])
+  }, [phase, match, timed, send])
 
   const gap = Math.round(mine - opponentProgress)
   const ahead = gap >= 0
@@ -167,17 +233,17 @@ export default function Battle() {
         </p>
       </div>
 
-      {/* Time remaining sat in the header at label size and was unreadable
-          mid-run. It is the second thing you look at, so it gets real size
-          and sits low where a glance lands. */}
+      {/* The clock is the second thing you look at, so it gets real size and
+          sits low where a glance lands. A race counts up; a timed duel counts
+          down and turns garnet inside the last 30 seconds. */}
       <div className="flex items-baseline justify-between border-t border-rule pt-4">
-        <Label>Time left</Label>
+        <Label>{timed ? 'Time left' : 'Time'}</Label>
         <p
           className={`display text-[64px] ${
-            remainingMs <= 30_000 ? 'text-garnet' : 'text-ink'
+            timed && timeMs <= 30_000 ? 'text-garnet' : 'text-ink'
           }`}
         >
-          {clock(remainingMs)}
+          {clock(timeMs)}
         </p>
       </div>
 
@@ -194,19 +260,10 @@ export default function Battle() {
         </div>
         {phase === 'done' ? (
           <p className="py-4 text-center text-[15px] text-slate">
-            Finished. Waiting on the result…
+            {timed ? 'Time. Waiting on the result…' : 'Finished. Waiting on the result…'}
           </p>
         ) : (
-        <Button
-          variant="outline"
-          onClick={() => {
-            if (confirm('End this duel? Your opponent takes the win.')) {
-              send('match:forfeit', { matchId: match.id })
-            }
-          }}
-        >
-          Hold to end
-        </Button>
+          <HoldToEnd onDone={() => send('match:forfeit', { matchId: match.id })} />
         )}
       </div>
     </div>

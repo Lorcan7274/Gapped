@@ -88,7 +88,11 @@ export default function Leaderboard() {
                     <span className="nums w-7 shrink-0 text-[15px] font-700">
                       {row.rank}
                     </span>
-                    {row.rank === 1 && <span className="text-[13px]">♦</span>}
+                    {row.rank === 1 && (
+                      <span className="label shrink-0" style={{ color: '#A5A0F5' }}>
+                        Apex
+                      </span>
+                    )}
                     <span className="flex-1 truncate text-[16px] font-700">
                       {row.displayName}
                     </span>

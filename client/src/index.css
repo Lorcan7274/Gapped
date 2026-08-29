@@ -111,6 +111,14 @@
 
   .safe-b { padding-bottom: max(1.25rem, env(safe-area-inset-bottom)); }
   .safe-t { padding-top: max(1rem, env(safe-area-inset-top)); }
+
+  /* Notices slide up gently from the tab bar. */
+  .toast-in { animation: toast-in 0.18s ease-out; }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* ------------------------------------------------------------------- crystal */
@@ -216,5 +224,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gem, .gem__gleam, .gem__shadow { animation: none; }
+  .gem, .gem__gleam, .gem__shadow, .toast-in { animation: none; }
 }

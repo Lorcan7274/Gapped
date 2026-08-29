@@ -9,7 +9,7 @@ import Profile from './pages/Profile.jsx'
 import LocationButton from './components/LocationButton.jsx'
 import ChallengeSheet from './components/ChallengeSheet.jsx'
 import ResultSheet from './components/ResultSheet.jsx'
-import { Spinner, ConnectionDot } from './components/ui.jsx'
+import { Spinner, ConnectionStatus } from './components/ui.jsx'
 
 const TABS = [
   { key: 'home', label: 'Home' },
@@ -53,20 +53,10 @@ export default function App() {
       <header className="flex items-center justify-between border-b border-rule px-6 py-3 safe-t">
         <span className="label-13 label text-ink">Gap</span>
         <div className="flex items-center gap-4">
-          <ConnectionDot status={connection} />
+          <ConnectionStatus status={connection} />
           <LocationButton />
         </div>
       </header>
-
-      {notice && (
-        <p
-          className={`border-b border-rule px-6 py-2.5 text-center text-[13px] ${
-            notice.tone === 'good' ? 'text-indigo' : 'text-garnet'
-          }`}
-        >
-          {notice.text}
-        </p>
-      )}
 
       <main className="flex flex-1 flex-col pb-[92px]">
         {tab === 'home' && <Home onFindDuel={() => setTab('lobby')} />}
@@ -74,6 +64,19 @@ export default function App() {
         {tab === 'ladder' && <Leaderboard />}
         {tab === 'you' && <Profile />}
       </main>
+
+      {/* Notices float above the tab bar instead of shoving the layout down. */}
+      {notice && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-[104px] z-50 mx-auto max-w-[430px] px-6">
+          <p
+            className={`toast-in border border-rule bg-paper px-5 py-3.5 text-center text-[13px] ${
+              notice.tone === 'good' ? 'text-indigo' : 'text-garnet'
+            }`}
+          >
+            {notice.text}
+          </p>
+        </div>
+      )}
 
       <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-[430px] flex border-t border-rule bg-paper px-2 safe-b">
         {TABS.map((item) => (

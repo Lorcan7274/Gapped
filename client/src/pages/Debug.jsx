@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createTracker, MAX_ACCURACY_M, MAX_SPEED_MPS } from '../lib/tracker.js'
+import { createTracker, MAX_ACCURACY_M, MAX_SPEED_MPS, MIN_STEP_M } from '../lib/tracker.js'
 import { Button, Label } from '../components/ui.jsx'
 
 const paceLabel = (msPerKm) => {
@@ -68,6 +68,7 @@ export default function Debug() {
         <h1 className="display text-[34px]">/debug</h1>
         <p className="mt-1 text-xs text-muted">
           Rejecting accuracy &gt; {MAX_ACCURACY_M} m and speed &gt; {MAX_SPEED_MPS} m/s.
+          Holding steps &lt; {MIN_STEP_M} m as jitter.
         </p>
       </header>
 

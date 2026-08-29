@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { distanceLabel } from '../lib/format.js'
+import { formatDuration } from '../lib/duelTypes.js'
 import { Shard } from './Crystal.jsx'
 import { Button, Label } from './ui.jsx'
 
@@ -34,7 +35,10 @@ export default function ChallengeSheet() {
         <Label className="text-garnet">Challenge</Label>
         <p className="display text-[44px]">{incoming.from.displayName}</p>
         <p className="nums text-[15px] text-slate">
-          {incoming.from.rating} · wants {distanceLabel(incoming.distanceM)}
+          {incoming.from.rating} · wants{' '}
+          {incoming.mode === 'timed'
+            ? formatDuration(incoming.durationMs / 60_000)
+            : distanceLabel(incoming.distanceM)}
         </p>
       </div>
       <div className="flex flex-col gap-2 pb-2">

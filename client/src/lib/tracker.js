@@ -14,6 +14,13 @@ export function distanceMetres(a, b) {
 export const MAX_ACCURACY_M = 25
 /** Faster than this from the last accepted fix means the fix is wrong. */
 export const MAX_SPEED_MPS = 11
+/**
+ * Movement smaller than this from the last counted fix is jitter, not
+ * running: the anchor holds until the runner has clearly moved, so standing
+ * still no longer drip-feeds metres into the total. Real movement still
+ * counts in full — it just lands in ≥3 m steps measured from the anchor.
+ */
+export const MIN_STEP_M = 3
 /** Pace is averaged over this much recent movement. */
 export const PACE_WINDOW_MS = 30_000
 
@@ -101,12 +108,26 @@ export function createTracker({ onUpdate, onError } = {}) {
         emit()
         return
       }
+      if (step < MIN_STEP_M) {
+        // Jitter floor: keep the anchor where it is. The trail still gets a
+        // point so the pace window sees time passing without movement.
+        accepted += 1
+        lastRejection = null
+        remember(at)
+        emit()
+        return
+      }
       total += step
     }
 
     previous = point
     accepted += 1
     lastRejection = null
+    remember(at)
+    emit()
+  }
+
+  function remember(at) {
     trail.push({ at, total })
     // Keep a little more than the pace window so the oldest sample in range
     // is always available.
@@ -114,7 +135,6 @@ export function createTracker({ onUpdate, onError } = {}) {
     if (trail.length > 4 && trail[0].at < cutoff) {
       trail = trail.filter((p) => p.at >= cutoff)
     }
-    emit()
   }
 
   return {

@@ -7,7 +7,7 @@ import { publicPlayer, selfPlayer, publicMatch } from '../lib/serialize.js'
 import { findNearby, leaderboard, rankOf, getPlayer } from '../db/players.js'
 import { recentMatchesFor, getLiveMatchFor } from '../db/matches.js'
 import { TIERS, STARTING_RATING } from '../lib/elo.js'
-import { DISTANCES } from '../lib/validate.js'
+import { DISTANCES, DURATION_MINUTES } from '../lib/validate.js'
 
 export default async function playerRoutes(app) {
   /** Opponents nearby and close in rating. Needs a position on both sides. */
@@ -64,6 +64,7 @@ export default async function playerRoutes(app) {
     startingRating: STARTING_RATING,
     tiers: TIERS.map(({ key, name, floor, colour }) => ({ key, name, floor, colour })),
     distances: DISTANCES,
+    durationsMinutes: DURATION_MINUTES,
     discovery: { radiusM: DISCOVERY_RADIUS_M, ratingSpread: DISCOVERY_RATING_SPREAD },
   }))
 }

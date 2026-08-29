@@ -43,7 +43,11 @@ CREATE TABLE IF NOT EXISTS challenges (
   id            TEXT PRIMARY KEY,
   from_id       TEXT NOT NULL REFERENCES players (id) ON DELETE CASCADE,
   to_id         TEXT NOT NULL REFERENCES players (id) ON DELETE CASCADE,
+  -- 'race' is first to distance_m; 'timed' is most metres inside duration_ms.
+  -- A timed row stores distance_m = 0.
+  mode          TEXT NOT NULL DEFAULT 'race',
   distance_m    INTEGER NOT NULL,
+  duration_ms   INTEGER,
   status        TEXT NOT NULL DEFAULT 'pending',
   created_at    INTEGER NOT NULL,
   expires_at    INTEGER NOT NULL,
@@ -58,7 +62,9 @@ CREATE TABLE IF NOT EXISTS matches (
   challenge_id    TEXT REFERENCES challenges (id) ON DELETE SET NULL,
   a_id            TEXT NOT NULL REFERENCES players (id) ON DELETE CASCADE,
   b_id            TEXT NOT NULL REFERENCES players (id) ON DELETE CASCADE,
+  mode            TEXT NOT NULL DEFAULT 'race',
   distance_m      INTEGER NOT NULL,
+  duration_ms     INTEGER,
   status          TEXT NOT NULL DEFAULT 'live',
   winner_id       TEXT REFERENCES players (id) ON DELETE SET NULL,
   a_rating_before INTEGER NOT NULL,

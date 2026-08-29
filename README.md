@@ -16,15 +16,18 @@ Win and your rating climbs. That is the whole game.
 
 ## What it does
 
-- **Join in one tap.** A display name, nothing else. No password, no email, no
-  verification code. The player record lives in `localStorage`, so a reload
-  drops you straight back on the home screen.
+- **Join with an email and password.** Progress follows you to any device.
+  Accounts from before sign-in existed keep working on their stored player id,
+  and can attach credentials later from the profile screen.
 - **Find someone worth racing.** The lobby ranks every runner by a blend of how
   near they are and how close their rating is, with toggles for pure distance
   or pure rating gap. Runners without location are shown at the bottom rather
   than hidden.
-- **Duel head to head.** Challenge someone, both phones count down together,
-  and the live screen shows the gap between you updating as you run.
+- **Duel head to head, two ways.** A race is first to the distance; a timed
+  duel is most metres before the clock runs out. Both phones count down
+  together, and the live screen shows the gap between you updating as you run.
+  Timed duels settle themselves on the server when time expires, so a result
+  arrives even if a phone wanders off.
 - **Climb the ladder.** ELO ratings from 1000, Sapphire I through V, and a
   ladder that marks your own row and your nemesis — the runner closest to you
   on rating.
@@ -117,11 +120,13 @@ only fully works over HTTPS. `localhost` counts; a bare IP address does not.
 
 ## Known limits
 
-- **No real authentication.** The player id in `localStorage` is the only
-  credential, so anyone holding one is that player. Fine for a private demo,
-  not for public release.
-- **GPS drift is not filtered.** The tracker rejects fixes worse than 25 m
-  accuracy and any implying over 11 m/s, but has no minimum-step floor, so
-  standing still slowly accumulates distance.
-- Duel modes beyond the distance duel, separate-course duels, and Strava
-  seeding are specified but not built.
+- **Legacy accounts are weakly held.** An account created before sign-in
+  existed authenticates by its bare player id until credentials are attached
+  to it, so anyone holding that id is that player.
+- **GPS is filtered, not solved.** The tracker rejects fixes worse than 25 m
+  accuracy and any implying over 11 m/s, and holds sub-3 m steps as jitter so
+  standing still no longer drip-feeds distance — but urban-canyon drift can
+  still flatter a slow runner.
+- **No rate limiting on sign-in**, so a public deployment would want a proxy
+  in front of `/api/auth/login`.
+- Separate-course duels and Strava seeding are specified but not built.

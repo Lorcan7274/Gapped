@@ -43,18 +43,27 @@ export default function authRoutes(broadcastPlayers) {
       const claimId = request.body?.claimPlayerId
       const claimable = claimId ? getPlayerWithSecret(claimId) : null
       let player
-      if (claimable && !claimable.email) {
-        player = attachCredentials(claimable.id, email, passwordHash)
-        request.log.info({ playerId: player.id }, 'attached credentials to existing player')
-      } else {
-        player = createPlayer({
-          displayName,
-          email,
-          passwordHash,
-          lat: coords?.lat ?? null,
-          lng: coords?.lng ?? null,
-        })
-        request.log.info({ playerId: player.id }, 'registered')
+      try {
+        if (claimable && !claimable.email) {
+          player = attachCredentials(claimable.id, email, passwordHash)
+          request.log.info({ playerId: player.id }, 'attached credentials to existing player')
+        } else {
+          player = createPlayer({
+            displayName,
+            email,
+            passwordHash,
+            lat: coords?.lat ?? null,
+            lng: coords?.lng ?? null,
+          })
+          request.log.info({ playerId: player.id }, 'registered')
+        }
+      } catch (error) {
+        // Two registrations racing on one email: the unique index catches
+        // what the earlier existence check missed.
+        if (String(error?.code || '').startsWith('SQLITE_CONSTRAINT')) {
+          return reply.code(409).send({ error: 'That email is already registered.' })
+        }
+        throw error
       }
 
       broadcastPlayers()

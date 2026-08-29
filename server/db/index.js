@@ -95,10 +95,33 @@ function addAccountColumns(log) {
   return added
 }
 
+/**
+ * Add duel-mode columns to challenges and matches created before timed duels
+ * existed. Every old row keeps working: it simply reads as a 'race'.
+ */
+function addDuelModeColumns(log) {
+  const added = []
+  for (const table of ['challenges', 'matches']) {
+    const columns = columnsOf(table)
+    if (columns.length === 0) continue // fresh database; schema creates them
+    if (!columns.includes('mode')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN mode TEXT NOT NULL DEFAULT 'race'`)
+      added.push(`${table}.mode`)
+    }
+    if (!columns.includes('duration_ms')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN duration_ms INTEGER`)
+      added.push(`${table}.duration_ms`)
+    }
+  }
+  if (added.length) log?.warn?.(`added duel mode columns: ${added.join(', ')}`)
+  return added
+}
+
 function migrate(log) {
   const changed = migrateFromPhoneAuth(log)
   db.exec('DROP TABLE IF EXISTS auth_codes')
   addAccountColumns(log)
+  addDuelModeColumns(log)
   return changed
 }
 

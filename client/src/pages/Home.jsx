@@ -8,7 +8,7 @@ import DuelSetup from '../components/DuelSetup.jsx'
 import { Button, Label, Rule } from '../components/ui.jsx'
 
 export default function Home({ onFindDuel }) {
-  const { player, players, pushLocation, send, setNotice } = useSession()
+  const { player, players, meta, pushLocation, send, setNotice } = useSession()
   const [type, setType] = useState('distance')
   const [ladderOpen, setLadderOpen] = useState(false)
   const [setup, setSetup] = useState(null)
@@ -40,12 +40,11 @@ export default function Home({ onFindDuel }) {
     setSetup(null)
     const opponent = setup?.opponent
     if (opponent) {
-      // Distance duels are timed; the others are raced to a distance. Until
-      // the server carries modes, a timed duel is sent as its own row.
-      send('challenge', {
-        opponentId: opponent.id,
-        distanceM: shape.unit === 'metres' ? shape.param : 1000,
-      })
+      // Minutes make a timed duel (most metres before the clock runs out);
+      // metres make a race to the line. The server carries both.
+      send('challenge', shape.unit === 'minutes'
+        ? { opponentId: opponent.id, mode: 'timed', durationMs: shape.param * 60_000 }
+        : { opponentId: opponent.id, mode: 'race', distanceM: shape.param })
       setNotice({ tone: 'good', text: `Challenge sent · ${describe(shape)}` })
     } else {
       onFindDuel?.(shape)
@@ -54,20 +53,14 @@ export default function Home({ onFindDuel }) {
 
   return (
     <div className="flex flex-1 flex-col px-6 pt-2">
-      {/* Tap the crystal for the full ladder. */}
+      {/* Crystal and rating are one thing — one tap opens the full ladder. */}
       <button
         onClick={() => setLadderOpen(true)}
         aria-label="See all ranks"
-        className="pt-3"
+        className="flex w-full flex-col items-center gap-1.5 pt-3 text-center"
       >
         <Crystal size={66} tone={player.tier?.key ?? 'sapphire'} />
-      </button>
-
-      <button
-        onClick={() => setLadderOpen(true)}
-        className="mt-5 flex flex-col items-center gap-1.5 text-center"
-      >
-        <Label>Rating</Label>
+        <Label className="mt-6">Rating</Label>
         <p className="display text-[72px]">{player.rating}</p>
         <p className="label-13 label text-ink">{player.tier?.name}</p>
         <p className="text-[13px] text-slate">Tap for all ranks</p>
@@ -150,7 +143,8 @@ export default function Home({ onFindDuel }) {
           Find duel
         </Button>
         <p className="text-center text-[13px] text-muted">
-          {selected.name} · {selected.detail} · match within 25 rating
+          {selected.name} · {selected.detail} · match within{' '}
+          {meta?.discovery?.ratingSpread ?? 250} rating
         </p>
       </div>
 

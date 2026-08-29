@@ -46,16 +46,14 @@ export function EmptyState({ title, body, action }) {
   )
 }
 
-export function ConnectionDot({ status }) {
-  const live = status === 'open'
-  return (
-    <span className="label flex items-center gap-1.5 text-muted">
-      <span
-        className={`size-1.5 rounded-full ${live ? 'bg-indigo' : 'border border-muted'}`}
-      />
-      {live ? 'Live' : 'Offline'}
-    </span>
-  )
+/**
+ * Connected is the normal state and says nothing. Only a degraded
+ * connection earns a word in the header.
+ */
+export function ConnectionStatus({ status }) {
+  if (status === 'reconnecting') return <span className="label text-garnet">Reconnecting</span>
+  if (status === 'offline') return <span className="label text-garnet">Offline</span>
+  return null
 }
 
 /** A headline stat: tiny label over a heavy numeral. */

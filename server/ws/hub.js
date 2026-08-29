@@ -24,7 +24,7 @@ import {
 } from '../db/matches.js'
 import { publicPlayer, selfPlayer } from '../lib/serialize.js'
 import { distanceMetres } from '../lib/geo.js'
-import { normaliseDistance, normaliseCoords } from '../lib/validate.js'
+import { normaliseDistance, normaliseDuration, normaliseCoords } from '../lib/validate.js'
 import { DISCOVERY_RADIUS_M, PRESENCE_TTL_MS } from '../config.js'
 import { db } from '../db/index.js'
 import { resolveSession } from '../db/sessions.js'
@@ -35,11 +35,17 @@ const COUNTDOWN_MS = 5_000
 const DISCONNECT_GRACE_MS = 45_000
 // Floor on how often we relay a runner's position to their opponent.
 const TICK_MIN_INTERVAL_MS = 400
+// A timed duel settles this long after its clock runs out, so the final
+// progress report each phone sends at zero has time to arrive.
+const TIMED_SETTLE_GRACE_MS = 3_000
+// Nobody covers ground faster than the GPS filter allows; anything past this
+// in a timed duel is a made-up number.
+const MAX_PLAUSIBLE_SPEED_MPS = 12
 
 export function createHub(log) {
   /** playerId -> Set<WebSocket> — a player may have the app open twice. */
   const sockets = new Map()
-  /** matchId -> { forfeitTimers: Map<playerId, Timeout> } */
+  /** matchId -> { forfeitTimers: Map<playerId, Timeout>, deadlineTimer } */
   const liveMatches = new Map()
 
   const wss = new WebSocketServer({ noServer: true })
@@ -98,7 +104,7 @@ export function createHub(log) {
       if (!viewer) continue
       const payload = encode(SERVER.PLAYERS, {
         players: rows.map((row) => publicPlayer(row, viewer, {
-          online: sockets.has(row.id),
+          online: isOnline(row.id),
           isYou: row.id === playerId,
         })),
         count: rows.length,
@@ -121,12 +127,21 @@ export function createHub(log) {
     return match.a_id === playerId ? match.b_id : match.a_id
   }
 
-  function matchState(match) {
+  /**
+   * The live match from one player's perspective, sent in READY so a phone
+   * that reloads or reconnects mid-duel can put the battle screen back up
+   * instead of stranding its runner outside a race the server still holds.
+   */
+  function matchState(match, playerId) {
     return {
       matchId: match.id,
-      distanceM: match.distance_m,
+      mode: match.mode ?? 'race',
+      distanceM: match.mode === 'timed' ? null : match.distance_m,
+      durationMs: match.duration_ms ?? null,
       status: match.status,
       startedAt: match.started_at,
+      startsAt: match.started_at + COUNTDOWN_MS,
+      opponent: publicPlayer(getPlayer(opponentOf(match, playerId))),
       progress: { [match.a_id]: match.a_progress_m, [match.b_id]: match.b_progress_m },
     }
   }
@@ -140,12 +155,24 @@ export function createHub(log) {
       challengeId: challenge.id,
       aId: a.id,
       bId: b.id,
+      mode: challenge.mode ?? 'race',
       distanceM: challenge.distance_m,
+      durationMs: challenge.duration_ms ?? null,
       aRating: a.rating,
       bRating: b.rating,
     })
 
-    liveMatches.set(match.id, { forfeitTimers: new Map() })
+    const runtime = { forfeitTimers: new Map(), deadlineTimer: null }
+    liveMatches.set(match.id, runtime)
+
+    // A timed duel ends itself: when the clock runs out, whoever covered
+    // more ground wins. Races have a finish line instead.
+    if (match.mode === 'timed' && match.duration_ms) {
+      runtime.deadlineTimer = setTimeout(
+        () => settleByTime(match.id),
+        COUNTDOWN_MS + match.duration_ms + TIMED_SETTLE_GRACE_MS
+      )
+    }
 
     const startsAt = Date.now() + COUNTDOWN_MS
     for (const [self, other] of [
@@ -154,7 +181,9 @@ export function createHub(log) {
     ]) {
       sendTo(self.id, SERVER.MATCH_START, {
         matchId: match.id,
-        distanceM: match.distance_m,
+        mode: match.mode,
+        distanceM: match.mode === 'timed' ? null : match.distance_m,
+        durationMs: match.duration_ms ?? null,
         startsAt,
         countdownMs: COUNTDOWN_MS,
         you: publicPlayer(self),
@@ -162,8 +191,24 @@ export function createHub(log) {
       })
     }
 
-    log.info({ matchId: match.id, a: a.display_name, b: b.display_name }, 'match started')
+    log.info(
+      { matchId: match.id, mode: match.mode, a: a.display_name, b: b.display_name },
+      'match started'
+    )
     return match
+  }
+
+  /** Time is up on a timed duel: more metres wins, equal metres is a draw. */
+  function settleByTime(matchId) {
+    const match = getMatch(matchId)
+    if (!match || match.status !== 'live') return
+    recordElapsed(match.id, 'a', match.duration_ms)
+    recordElapsed(match.id, 'b', match.duration_ms)
+    const winnerId =
+      match.a_progress_m > match.b_progress_m ? match.a_id
+      : match.b_progress_m > match.a_progress_m ? match.b_id
+      : null
+    endMatch(matchId, winnerId, 'time')
   }
 
   function endMatch(matchId, winnerId, reason) {
@@ -173,6 +218,7 @@ export function createHub(log) {
     const runtime = liveMatches.get(matchId)
     if (runtime) {
       for (const timer of runtime.forfeitTimers.values()) clearTimeout(timer)
+      if (runtime.deadlineTimer) clearTimeout(runtime.deadlineTimer)
       liveMatches.delete(matchId)
     }
 
@@ -183,6 +229,9 @@ export function createHub(log) {
       const side = sideOf(match, playerId)
       sendTo(playerId, SERVER.MATCH_END, {
         matchId: match.id,
+        mode: match.mode ?? 'race',
+        distanceM: match.mode === 'timed' ? null : match.distance_m,
+        durationMs: match.duration_ms ?? null,
         reason,
         winnerId: match.winner_id,
         outcome:
@@ -191,6 +240,8 @@ export function createHub(log) {
         ratingAfter: side === 'a' ? match.a_rating_after : match.b_rating_after,
         elapsedMs: side === 'a' ? match.a_elapsed_ms : match.b_elapsed_ms,
         opponentElapsedMs: side === 'a' ? match.b_elapsed_ms : match.a_elapsed_ms,
+        progressM: side === 'a' ? match.a_progress_m : match.b_progress_m,
+        opponentProgressM: side === 'a' ? match.b_progress_m : match.a_progress_m,
         player: selfPlayer(self, { rank: rankOf(self.id) }),
         opponent: publicPlayer(other),
       })
@@ -242,9 +293,18 @@ export function createHub(log) {
     [CLIENT.CHALLENGE](ctx) {
       const { socket, playerId, msg } = ctx
       const opponentId = String(msg.opponentId ?? '')
-      const distanceM = normaliseDistance(msg.distanceM)
 
-      if (!distanceM) return fail(socket, 'Pick a valid race distance.', msg.id)
+      // Two shapes of duel: a race to a distance, or most metres in a time.
+      const mode = msg.mode === 'timed' ? 'timed' : 'race'
+      const distanceM = mode === 'race' ? normaliseDistance(msg.distanceM) : null
+      const durationMs = mode === 'timed' ? normaliseDuration(msg.durationMs) : null
+
+      if (mode === 'race' && !distanceM) {
+        return fail(socket, 'Pick a valid race distance.', msg.id)
+      }
+      if (mode === 'timed' && !durationMs) {
+        return fail(socket, 'Pick a valid duel length.', msg.id)
+      }
       if (opponentId === playerId) return fail(socket, 'You cannot race yourself.', msg.id)
 
       const me = getPlayer(playerId)
@@ -265,19 +325,25 @@ export function createHub(log) {
         return fail(socket, 'They are too far away to race.', msg.id)
       }
 
-      const challenge = createChallenge({ fromId: playerId, toId: opponentId, distanceM })
+      const challenge = createChallenge({
+        fromId: playerId, toId: opponentId, mode, distanceM, durationMs,
+      })
 
       send(socket, SERVER.CHALLENGE_SENT, {
         id: msg.id ?? null,
         challengeId: challenge.id,
         opponent: publicPlayer(them, me),
+        mode,
         distanceM,
+        durationMs,
         expiresAt: challenge.expires_at,
       })
       sendTo(opponentId, SERVER.CHALLENGE_INCOMING, {
         challengeId: challenge.id,
         from: publicPlayer({ ...me, distance_m: Math.round(apart) }, them),
+        mode,
         distanceM,
+        durationMs,
         expiresAt: challenge.expires_at,
       })
     },
@@ -332,9 +398,13 @@ export function createHub(log) {
 
       const metres = Number(msg.progressM)
       if (!Number.isFinite(metres) || metres < 0) return
-      // Progress only ever moves forward, and never past the finish line.
+      // Progress only ever moves forward. A race also never moves past its
+      // finish line; a timed duel is capped at the fastest plausible run.
+      const cap = match.mode === 'timed'
+        ? Math.ceil((match.duration_ms / 1000) * MAX_PLAUSIBLE_SPEED_MPS)
+        : match.distance_m
       const previous = side === 'a' ? match.a_progress_m : match.b_progress_m
-      const clamped = Math.min(match.distance_m, Math.max(previous, metres))
+      const clamped = Math.min(cap, Math.max(previous, metres))
 
       recordProgress(match.id, side, clamped)
 
@@ -350,7 +420,7 @@ export function createHub(log) {
         playerId,
         progressM: clamped,
         elapsedMs: Number(msg.elapsedMs) || null,
-        remainingM: Math.max(0, match.distance_m - clamped),
+        remainingM: match.mode === 'timed' ? null : Math.max(0, match.distance_m - clamped),
       })
     },
 
@@ -358,6 +428,8 @@ export function createHub(log) {
       const { socket, playerId, msg } = ctx
       const match = getMatch(String(msg.matchId ?? ''))
       if (!match || match.status !== 'live') return
+      // A timed duel has no finish line; it ends when the clock does.
+      if (match.mode === 'timed') return
       const side = sideOf(match, playerId)
       if (!side) return
 
@@ -405,7 +477,7 @@ export function createHub(log) {
 
     send(socket, SERVER.READY, {
       player: selfPlayer(getPlayer(playerId), { rank: rankOf(playerId) }),
-      liveMatch: live ? matchState(live) : null,
+      liveMatch: live ? matchState(live, playerId) : null,
       presenceTtlMs: PRESENCE_TTL_MS,
     })
 
@@ -454,10 +526,15 @@ export function createHub(log) {
   }, 30_000)
   heartbeat.unref()
 
-  // Sweep challenges nobody answered.
+  // Sweep challenges nobody answered, and tell both phones — otherwise the
+  // challenger's "challenge sent" bar sits there until they cancel it.
   const sweeper = setInterval(() => {
     const expired = expireChallenges()
-    if (expired > 0) log.debug({ expired }, 'expired stale challenges')
+    for (const challenge of expired) {
+      sendTo(challenge.from_id, SERVER.CHALLENGE_EXPIRED, { challengeId: challenge.id })
+      sendTo(challenge.to_id, SERVER.CHALLENGE_EXPIRED, { challengeId: challenge.id })
+    }
+    if (expired.length > 0) log.debug({ expired: expired.length }, 'expired stale challenges')
   }, 15_000)
   sweeper.unref()
 
@@ -487,8 +564,13 @@ export function createHub(log) {
     }
 
     if (!player) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
-      socket.destroy()
+      // Complete the handshake, then close with policy code 1008. A raw 401
+      // surfaces in the browser as an anonymous 1006, so the client could
+      // never tell "server is down" from "this id is dead" and would retry a
+      // dead credential forever.
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        ws.close(1008, 'unknown player')
+      })
       return
     }
 
@@ -502,6 +584,7 @@ export function createHub(log) {
     clearInterval(sweeper)
     for (const runtime of liveMatches.values()) {
       for (const timer of runtime.forfeitTimers.values()) clearTimeout(timer)
+      if (runtime.deadlineTimer) clearTimeout(runtime.deadlineTimer)
     }
     liveMatches.clear()
     for (const socket of wss.clients) socket.terminate()
