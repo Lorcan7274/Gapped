@@ -1,0 +1,61 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink-950: #08080c;
+  --color-ink-900: #0d0d14;
+  --color-ink-850: #12121b;
+  --color-ink-800: #191924;
+  --color-ink-700: #24242f;
+  --color-ink-600: #34343f;
+  --color-ink-400: #6f6f80;
+  --color-ink-200: #b6b6c4;
+  --color-ink-50: #f2f2f6;
+
+  --color-surge-400: #4ade9a;
+  --color-surge-500: #22c777;
+  --color-surge-600: #16a35f;
+
+  --color-flare-400: #ff7a8f;
+  --color-flare-500: #ff4f6d;
+
+  --color-volt-400: #ffd84d;
+
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-ink-950 text-ink-50 antialiased;
+    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    /* Fixed height + no scroll chaining keeps the app feeling native on a phone. */
+    overscroll-behavior-y: none;
+  }
+
+  /* Tabular figures stop timers and ratings from jittering as they count. */
+  .nums {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+}
+
+@layer components {
+  .safe-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .safe-top {
+    padding-top: max(1rem, env(safe-area-inset-top));
+  }
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.85); opacity: 0.7; }
+  70% { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.animate-ping-slow {
+  animation: pulse-ring 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
