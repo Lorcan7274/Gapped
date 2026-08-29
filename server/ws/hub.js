@@ -6,7 +6,7 @@ import {
   touchPlayer,
   rankOf,
   allPlayers,
-  hasCredentials,
+  hasPhone,
 } from '../db/players.js'
 import {
   createChallenge,
@@ -555,12 +555,12 @@ export function createHub(log) {
 
     if (!player) {
       // Same legacy allowance as the HTTP side: a bare id still works for an
-      // account that has never had credentials attached.
+      // account that has never had a verified number attached.
       const legacy = getPlayer(
         url.searchParams.get('playerId') ||
         request.headers['sec-websocket-protocol'] || ''
       )
-      if (legacy && !hasCredentials(legacy.id)) player = legacy
+      if (legacy && !hasPhone(legacy.id)) player = legacy
     }
 
     if (!player) {

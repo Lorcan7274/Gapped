@@ -1,16 +1,18 @@
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
--- A player is created by joining with a display name. There is no password
--- and no verification step: the id returned at join is the credential, and
--- the client keeps it in localStorage.
+-- A player is a display name plus a verified phone number. The number is
+-- the credential: prove you hold it with a texted code and you are that
+-- player, on any device.
 CREATE TABLE IF NOT EXISTS players (
   id                TEXT PRIMARY KEY,
   display_name      TEXT NOT NULL,
-  -- Null for accounts created before sign-in existed. Those keep working
-  -- until someone attaches credentials to them.
-  email             TEXT UNIQUE,
-  password_hash     TEXT,
+  -- E.164. Null for accounts created before phone sign-in existed; those
+  -- keep working on their stored id until a number is attached. Uniqueness
+  -- comes from idx_players_phone_unique, created in the migration path so
+  -- old databases converge on it too (an inline UNIQUE cannot be added to
+  -- an existing table).
+  phone             TEXT,
   rating            INTEGER NOT NULL DEFAULT 1000,
   peak_rating       INTEGER NOT NULL DEFAULT 1000,
   games             INTEGER NOT NULL DEFAULT 0,
@@ -26,8 +28,21 @@ CREATE TABLE IF NOT EXISTS players (
 );
 
 CREATE INDEX IF NOT EXISTS idx_players_rating   ON players (rating DESC);
-CREATE INDEX IF NOT EXISTS idx_players_email    ON players (email);
 CREATE INDEX IF NOT EXISTS idx_players_location ON players (lat, lng);
+
+-- One row per texted code. The code itself is never stored — only a digest
+-- salted with the number — and each row dies after five wrong guesses.
+CREATE TABLE IF NOT EXISTS auth_codes (
+  id           TEXT PRIMARY KEY,
+  phone        TEXT NOT NULL,
+  code_hash    TEXT NOT NULL,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  consumed_at  INTEGER,
+  created_at   INTEGER NOT NULL,
+  expires_at   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_codes_phone ON auth_codes (phone, created_at DESC);
 
 -- Sign-in issues an opaque token; the token is the credential, not the id.
 CREATE TABLE IF NOT EXISTS sessions (

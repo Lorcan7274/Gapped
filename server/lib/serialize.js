@@ -1,6 +1,6 @@
 import { tierFor } from './elo.js'
 import { distanceMetres } from './geo.js'
-import { hasCredentials } from '../db/players.js'
+import { phoneOf } from '../db/players.js'
 
 /**
  * What one player may see about another. Raw coordinates never leave the
@@ -45,13 +45,16 @@ export function publicPlayer(row, viewer = null, extra = {}) {
 
 /** The viewer's own record, which may include their own coordinates. */
 export function selfPlayer(row, extra = {}) {
+  const phone = phoneOf(row.id)
   return {
     ...publicPlayer(row, null, extra),
     lat: row.lat,
     lng: row.lng,
     locatedAt: row.located_at,
-    // Tells the client whether "leave" means "sign out" or "lose the account".
-    hasAccount: hasCredentials(row.id),
+    // Your own number, and whether "leave" means "sign out" or "lose the
+    // account". Nobody else's serialisation ever carries a phone.
+    phone,
+    hasAccount: phone != null,
   }
 }
 

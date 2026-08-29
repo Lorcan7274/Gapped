@@ -12,17 +12,15 @@ const selectById = db.prepare(`SELECT ${COLUMNS} FROM players WHERE id = ?`)
 
 const insertPlayer = db.prepare(`
   INSERT INTO players
-    (id, display_name, email, password_hash, rating, peak_rating,
+    (id, display_name, phone, rating, peak_rating,
      lat, lng, located_at, created_at, last_seen_at)
   VALUES
-    (@id, @display_name, @email, @password_hash, @rating, @rating,
+    (@id, @display_name, @phone, @rating, @rating,
      @lat, @lng, @located_at, @created_at, @created_at)
 `)
 
-const selectByEmail = db.prepare('SELECT * FROM players WHERE email = ?')
-const attachAccount = db.prepare(
-  'UPDATE players SET email = ?, password_hash = ? WHERE id = ?'
-)
+const selectByPhone = db.prepare('SELECT id FROM players WHERE phone = ?')
+const attachNumber = db.prepare('UPDATE players SET phone = ? WHERE id = ?')
 
 const updateLocation = db.prepare(`
   UPDATE players SET lat = ?, lng = ?, located_at = ?, last_seen_at = ? WHERE id = ?
@@ -36,42 +34,35 @@ export const getPlayer = (id) => (id ? selectById.get(id) ?? null : null)
  * Create a player from a display name. Coordinates are optional — a browser
  * that denies location still joins, just without a position.
  */
-const selectCredentials = db.prepare(
-  'SELECT email, password_hash FROM players WHERE id = ?'
-)
-const selectWithSecret = db.prepare('SELECT * FROM players WHERE id = ?')
+const selectPhone = db.prepare('SELECT phone FROM players WHERE id = ?')
 
 /**
- * Whether this account has an email and password attached. The public row
- * deliberately omits both, so a caller cannot test for them by reading a
- * serialised player — it has to ask.
+ * The verified number on an account. The public row deliberately omits it —
+ * other players never see a phone number — so a caller has to ask.
  */
-export function hasCredentials(id) {
-  if (!id) return false
-  const row = selectCredentials.get(id)
-  return Boolean(row?.email && row?.password_hash)
-}
+export const phoneOf = (id) => (id ? selectPhone.get(id)?.phone ?? null : null)
 
-/** Row including the password hash. Never serialise this to a client. */
-export const getPlayerByEmail = (email) => (email ? selectByEmail.get(email) ?? null : null)
-export const getPlayerWithSecret = (id) =>
-  id ? selectWithSecret.get(id) ?? null : null
+/** Whether this account has a verified number, i.e. a real credential. */
+export const hasPhone = (id) => Boolean(phoneOf(id))
 
-/** Give an existing account an email and password without losing its rating. */
-export function attachCredentials(id, email, passwordHash) {
-  attachAccount.run(email, passwordHash, id)
+/** The account that owns a number, if any. */
+export const getPlayerByPhone = (phone) =>
+  phone ? getPlayer(selectByPhone.get(phone)?.id) : null
+
+/** Give an existing account a verified number without losing its rating. */
+export function attachPhone(id, phone) {
+  attachNumber.run(phone, id)
   return getPlayer(id)
 }
 
 export function createPlayer({
-  displayName, email = null, passwordHash = null, lat = null, lng = null,
+  displayName, phone = null, lat = null, lng = null,
 }) {
   const hasCoords = lat != null && lng != null
   const player = {
     id: newId(),
     display_name: displayName,
-    email,
-    password_hash: passwordHash,
+    phone,
     rating: STARTING_RATING,
     lat: hasCoords ? lat : null,
     lng: hasCoords ? lng : null,

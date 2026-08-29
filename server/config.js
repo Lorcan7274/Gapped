@@ -28,3 +28,11 @@ export const PRESENCE_TTL_MS = int(process.env.PRESENCE_TTL_MS, 90_000)
 export const SESSION_TTL_MS = int(process.env.SESSION_TTL_DAYS, 30) * 86_400_000
 export const AUTH_CODE_TTL_MS = int(process.env.AUTH_CODE_TTL_SECONDS, 300) * 1000
 export const CHALLENGE_TTL_MS = int(process.env.CHALLENGE_TTL_SECONDS, 60) * 1000
+
+// Whether the verification code is echoed in the request-code response.
+// Defaults to on outside production so sign-in works with no SMS provider;
+// force it with AUTH_CODE_ECHO=1 for a demo deploy, knowing anyone can then
+// sign in as any number.
+export const AUTH_CODE_ECHO = process.env.AUTH_CODE_ECHO != null
+  ? ['1', 'true'].includes(process.env.AUTH_CODE_ECHO)
+  : !IS_PRODUCTION

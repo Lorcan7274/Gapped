@@ -1,79 +1,108 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { useSession } from '../state/session.jsx'
+import { usePhoneAuth } from '../lib/usePhoneAuth.js'
 import { clock, distanceLabel, signed } from '../lib/format.js'
 import { formatDuration } from '../lib/duelTypes.js'
 import { Shard } from '../components/Crystal.jsx'
 import { Button, Label, Rule, Spinner } from '../components/ui.jsx'
 
-/**
- * An account with no email attached lives entirely in this phone's
- * localStorage — leaving deletes it, clearing the browser loses it. This
- * form attaches credentials to the account you already are, rating and all.
- */
-function SecureAccount({ player, register, setNotice }) {
-  const [open, setOpen] = useState(false)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
+const field =
+  'min-h-[56px] w-full border-b border-ink bg-transparent pb-2 text-[17px] ' +
+  'font-700 text-ink placeholder:text-muted focus:outline-none'
 
-  async function submit(event) {
+/**
+ * An account with no verified number lives entirely in this browser's
+ * localStorage — leaving deletes it, clearing the browser loses it. Proving
+ * a phone number attaches it to the account you already are, rating and all.
+ */
+function SecureAccount({ player, setNotice }) {
+  const [open, setOpen] = useState(false)
+  const {
+    stage, phone, setPhone, code, setCode,
+    busy, error, devCode, resendIn, request, verify, back,
+  } = usePhoneAuth()
+
+  const phoneReady = phone.replace(/\D/g, '').length >= 8
+
+  async function submitNumber(event) {
     event.preventDefault()
-    setBusy(true)
-    setError(null)
-    try {
-      await register({ email, password, displayName: player.displayName })
-      setNotice({ tone: 'good', text: 'Account secured. Sign in anywhere to pick it up.' })
-    } catch (err) {
-      setError(err.message)
-      setBusy(false)
-    }
+    if (phoneReady) request()
   }
 
-  const field =
-    'min-h-[56px] w-full border-b border-ink bg-transparent pb-2 text-[17px] ' +
-    'font-700 text-ink placeholder:text-muted focus:outline-none'
+  async function submitCode(event) {
+    event.preventDefault()
+    // The claim carries this account's id, so the name is only a fallback.
+    const err = await verify({ displayName: player.displayName })
+    if (!err) setNotice({ tone: 'good', text: 'Number verified. Sign in anywhere to pick this account up.' })
+  }
 
   return (
     <div className="mt-8">
       <Rule />
       <div className="pt-4">
-        <Label className="text-garnet">This account lives on this phone only</Label>
+        <Label className="text-garnet">This account is tied to this device</Label>
         <p className="mt-2 text-[15px] leading-relaxed text-slate">
-          Add an email and password and your rating follows you to any device.
+          Verify your phone number and your rating follows you anywhere.
         </p>
         {!open ? (
           <Button variant="outline" className="mt-4" onClick={() => setOpen(true)}>
             Secure account
           </Button>
-        ) : (
-          <form onSubmit={submit} className="mt-4 flex flex-col gap-4">
+        ) : stage === 'number' ? (
+          <form onSubmit={submitNumber} className="mt-4 flex flex-col gap-4">
             <input
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              autoCapitalize="none"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className={field}
-            />
-            <input
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
-              className={field}
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+353 87 123 4567"
+              className={`nums ${field}`}
             />
             {error && <p className="text-[13px] text-garnet">{error}</p>}
-            <Button type="submit" disabled={busy || !email.includes('@') || password.length < 8}>
-              {busy ? 'Securing…' : 'Attach email'}
+            <Button type="submit" disabled={busy || !phoneReady}>
+              {busy ? 'Sending…' : 'Text me a code'}
             </Button>
+          </form>
+        ) : (
+          <form onSubmit={submitCode} className="mt-4 flex flex-col gap-4">
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]*"
+              maxLength={6}
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+              placeholder="000000"
+              aria-label="Six-digit code"
+              className={`nums ${field} text-center text-[24px] tracking-[0.4em]`}
+            />
+            {devCode && (
+              <p className="nums text-[13px] text-muted">
+                No SMS provider in dev — your code is {devCode}
+              </p>
+            )}
+            {error && <p className="text-[13px] text-garnet">{error}</p>}
+            <Button type="submit" disabled={busy || code.length !== 6}>
+              {busy ? 'Checking…' : 'Verify number'}
+            </Button>
+            <div className="flex items-center justify-between">
+              <button type="button" onClick={back} className="label min-h-[56px] text-muted">
+                Wrong number?
+              </button>
+              <button
+                type="button"
+                onClick={request}
+                disabled={busy || resendIn > 0}
+                className="label min-h-[56px] text-muted disabled:opacity-40"
+              >
+                {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+              </button>
+            </div>
           </form>
         )}
       </div>
@@ -82,7 +111,7 @@ function SecureAccount({ player, register, setNotice }) {
 }
 
 export default function Profile() {
-  const { player, leave, register, setNotice } = useSession()
+  const { player, leave, setNotice } = useSession()
   const [matches, setMatches] = useState(null)
 
   useEffect(() => {
@@ -172,12 +201,13 @@ export default function Profile() {
         )}
       </div>
 
-      {anonymous && (
-        <SecureAccount player={player} register={register} setNotice={setNotice} />
-      )}
+      {anonymous && <SecureAccount player={player} setNotice={setNotice} />}
 
       <div className="mt-10">
         <Rule />
+        {player.phone && (
+          <p className="nums mt-4 text-[13px] text-muted">Verified as {player.phone}</p>
+        )}
         <Button
           variant="quiet"
           className="mt-4"
@@ -185,7 +215,7 @@ export default function Profile() {
             if (
               !anonymous ||
               confirm(
-                'This account has no email attached. Leaving deletes it — rating, record, all of it. Leave anyway?'
+                'This account has no verified number. Leaving deletes it — rating, record, all of it. Leave anyway?'
               )
             ) {
               leave()

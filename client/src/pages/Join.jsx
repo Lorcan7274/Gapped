@@ -1,54 +1,49 @@
 import { useState } from 'react'
-import { useSession } from '../state/session.jsx'
 import { getCurrentPosition } from '../lib/tracker.js'
+import { usePhoneAuth } from '../lib/usePhoneAuth.js'
 import Crystal from '../components/Crystal.jsx'
 import { Button, Label } from '../components/ui.jsx'
 
+const field =
+  'min-h-[58px] w-full border-b border-ink bg-transparent pb-3 text-[19px] ' +
+  'font-700 text-ink placeholder:text-muted focus:outline-none'
+
 /**
- * Sign in or create an account. An email and password rather than a phone
- * code, so progress follows you to any device without needing an SMS
- * provider standing between a player and their own account.
+ * Join or sign back in: a display name plus a verified phone number. Enter
+ * the number, prove it with a texted code, and the account — with its
+ * rating — follows you to any device. No password to forget.
  */
 export default function Join() {
-  const { register, login } = useSession()
-  const [mode, setMode] = useState('register')
+  const {
+    stage, phone, setPhone, code, setCode,
+    busy, error, devCode, resendIn, request, verify, back,
+  } = usePhoneAuth()
+  const [mode, setMode] = useState('create')
   const [displayName, setDisplayName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [stage, setStage] = useState(null)
-  const [error, setError] = useState(null)
+  // Sign-in with a number nobody owns yet: the server keeps the code alive
+  // and asks for a name, so the same code creates the account.
+  const [needName, setNeedName] = useState(false)
 
-  const creating = mode === 'register'
-  const ready =
-    email.includes('@') && password.length >= 8 &&
-    (!creating || displayName.trim().length >= 2)
+  const creating = mode === 'create' || needName
+  const nameReady = displayName.trim().length >= 2
+  const phoneReady = phone.replace(/\D/g, '').length >= 8
 
-  async function submit(event) {
+  async function submitNumber(event) {
     event.preventDefault()
-    setBusy(true)
-    setError(null)
-    try {
-      if (creating) {
-        // Ask for location, but never let a refusal block the account.
-        setStage('Finding you…')
-        const coords = await getCurrentPosition().catch(() => null)
-        setStage('Creating account…')
-        await register({ email, password, displayName, coords })
-      } else {
-        setStage('Signing in…')
-        await login({ email, password })
-      }
-    } catch (err) {
-      setError(err.message)
-      setBusy(false)
-      setStage(null)
-    }
+    if (phoneReady && (!creating || nameReady)) request()
   }
 
-  const field =
-    'min-h-[58px] w-full border-b border-ink bg-transparent pb-3 text-[19px] ' +
-    'font-700 text-ink placeholder:text-muted focus:outline-none'
+  async function submitCode(event) {
+    event.preventDefault()
+    const extra = {}
+    if (creating) {
+      extra.displayName = displayName
+      // Ask for location, but never let a refusal block the account.
+      extra.coords = await getCurrentPosition().catch(() => null)
+    }
+    const err = await verify(extra)
+    if (err?.code === 'name_required') setNeedName(true)
+  }
 
   return (
     <div className="flex min-h-dvh flex-col justify-between bg-paper px-6 safe-t safe-b">
@@ -60,69 +55,131 @@ export default function Join() {
         </p>
       </header>
 
-      <form onSubmit={submit} className="flex flex-col gap-6 pt-6">
-        {creating && (
+      {stage === 'number' ? (
+        <form onSubmit={submitNumber} className="flex flex-col gap-6 pt-6">
+          {creating && (
+            <label className="flex flex-col gap-2">
+              <Label as="span">Display name</Label>
+              <input
+                type="text"
+                autoComplete="nickname"
+                maxLength={24}
+                required
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Your name"
+                className={field}
+              />
+            </label>
+          )}
+
           <label className="flex flex-col gap-2">
-            <Label as="span">Display name</Label>
+            <Label as="span">Phone number</Label>
             <input
-              type="text"
-              autoComplete="nickname"
-              maxLength={24}
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
               required
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Your name"
-              className={field}
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+353 87 123 4567"
+              className={`nums ${field}`}
             />
+            <span className="text-[13px] text-muted">
+              Include the country code. We text a code, nothing else.
+            </span>
           </label>
-        )}
 
-        <label className="flex flex-col gap-2">
-          <Label as="span">Email</Label>
+          {error && <p className="text-[13px] text-garnet">{error}</p>}
+
+          <Button type="submit" disabled={busy || !phoneReady || (creating && !nameReady)}>
+            {busy ? 'Sending…' : 'Text me a code'}
+          </Button>
+
+          <button
+            type="button"
+            onClick={() => setMode(creating ? 'signin' : 'create')}
+            className="label min-h-[56px] text-muted"
+          >
+            {creating ? 'I already have an account' : 'Create an account instead'}
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={submitCode} className="flex flex-col gap-6 pt-6">
+          <div className="flex flex-col gap-2">
+            <Label as="span">Enter the code</Label>
+            <p className="text-[15px] text-slate">
+              We texted <span className="nums text-ink">{phone}</span>.
+            </p>
+          </div>
+
           <input
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            autoCapitalize="none"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]*"
+            maxLength={6}
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            className={field}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            placeholder="000000"
+            aria-label="Six-digit code"
+            className={`nums ${field} text-center text-[32px] tracking-[0.4em]`}
           />
-        </label>
 
-        <label className="flex flex-col gap-2">
-          <Label as="span">Password</Label>
-          <input
-            type="password"
-            autoComplete={creating ? 'new-password' : 'current-password'}
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={creating ? 'At least 8 characters' : 'Your password'}
-            className={field}
-          />
-        </label>
+          {devCode && (
+            <p className="nums text-center text-[13px] text-muted">
+              No SMS provider in dev — your code is {devCode}
+            </p>
+          )}
 
-        {error && <p className="text-[13px] text-garnet">{error}</p>}
+          {needName && (
+            <label className="flex flex-col gap-2">
+              <Label as="span">Display name</Label>
+              <p className="text-[13px] text-slate">
+                That number is new here. Pick a name to create the account.
+              </p>
+              <input
+                type="text"
+                autoComplete="nickname"
+                maxLength={24}
+                required
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Your name"
+                className={field}
+              />
+            </label>
+          )}
 
-        <Button type="submit" disabled={busy || !ready}>
-          {busy ? (stage ?? 'Working…') : creating ? 'Create account' : 'Sign in'}
-        </Button>
+          {error && <p className="text-[13px] text-garnet">{error}</p>}
 
-        <button
-          type="button"
-          onClick={() => {
-            setMode(creating ? 'login' : 'register')
-            setError(null)
-          }}
-          className="label min-h-[56px] text-muted"
-        >
-          {creating ? 'I already have an account' : 'Create an account instead'}
-        </button>
-      </form>
+          <Button
+            type="submit"
+            disabled={busy || code.length !== 6 || (needName && !nameReady)}
+          >
+            {busy ? 'Checking…' : needName ? 'Create account' : 'Verify'}
+          </Button>
+
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => { setNeedName(false); back() }}
+              className="label min-h-[56px] text-muted"
+            >
+              Wrong number?
+            </button>
+            <button
+              type="button"
+              onClick={request}
+              disabled={busy || resendIn > 0}
+              className="label min-h-[56px] text-muted disabled:opacity-40"
+            >
+              {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   )
 }

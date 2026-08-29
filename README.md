@@ -10,9 +10,11 @@ Win and your rating climbs. That is the whole game.
 
 ## What it does
 
-- **Join with an email and password.** Progress follows you to any device.
-  Accounts from before sign-in existed keep working on their stored player id,
-  and can attach credentials later from the profile screen.
+- **Join with a name and a phone number.** A texted six-digit code proves the
+  number, and the number is the credential — no password, and progress follows
+  you to any device. Accounts from before sign-in existed keep working on
+  their stored player id, and can verify a number later from the profile
+  screen.
 - **Find someone worth racing.** The lobby ranks every runner by a blend of how
   near they are and how close their rating is, with toggles for pure distance
   or pure rating gap. Runners without location are shown at the bottom rather
@@ -65,8 +67,8 @@ server/
   config.js        every tunable, read from the environment
   index.js         HTTP, static files, and the WebSocket upgrade
   db/              schema, migrations, data access
-  lib/             elo, geo, ids, validation, serializers
-  routes/          join, players, leaderboard
+  lib/             elo, geo, ids, phone, sms, validation, serializers
+  routes/          auth (phone codes), join, players, leaderboard
   ws/hub.js        presence, player-list broadcast, duels
 client/src/
   pages/           Join, Home, Challenge, Battle, Leaderboard, Profile, Debug
@@ -101,6 +103,8 @@ npm run dev:client # Vite on :5173
 | `HOST` | `0.0.0.0` | |
 | `DISCOVERY_RADIUS_M` | `5000` | How far away an opponent can be. |
 | `DISCOVERY_RATING_SPREAD` | `250` | How far apart two ratings can be and still match. |
+| `AUTH_CODE_TTL_SECONDS` | `300` | How long a texted sign-in code stays valid. |
+| `AUTH_CODE_ECHO` | on outside production | Return the code in the request-code response. Forcing it on in production means anyone can sign in as any number. |
 
 ### Deploying
 
@@ -114,13 +118,18 @@ only fully works over HTTPS. `localhost` counts; a bare IP address does not.
 
 ## Known limits
 
+- **No SMS provider is wired.** `server/lib/sms.js` is the seam for one.
+  Until it is filled in, dev builds echo the code in the request-code
+  response, and production only logs it — so production sign-in means
+  reading codes out of the deploy logs. Codes are rate limited (30 s
+  cooldown, five per number per hour, five guesses each) but request-code
+  has no per-IP limit, so a public deploy with a real provider would want a
+  proxy in front of it.
 - **Legacy accounts are weakly held.** An account created before sign-in
-  existed authenticates by its bare player id until credentials are attached
-  to it, so anyone holding that id is that player.
+  existed authenticates by its bare player id until a number is verified on
+  it, so anyone holding that id is that player.
 - **GPS is filtered, not solved.** The tracker rejects fixes worse than 25 m
   accuracy and any implying over 11 m/s, and holds sub-3 m steps as jitter so
   standing still no longer drip-feeds distance — but urban-canyon drift can
   still flatter a slow runner.
-- **No rate limiting on sign-in**, so a public deployment would want a proxy
-  in front of `/api/auth/login`.
 - Separate-course duels and Strava seeding are specified but not built.

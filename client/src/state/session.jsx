@@ -248,21 +248,27 @@ export function SessionProvider({ children }) {
     return nextPlayer
   }, [])
 
-  /** Create an account, carrying over an anonymous player if there is one. */
-  const register = useCallback(async ({ email, password, displayName, coords }) => {
-    const res = await api('/api/auth/register', {
+  /** Step one of sign-in: have a code texted to a number. */
+  const requestPhoneCode = useCallback(
+    (phone) => api('/api/auth/request-code', { method: 'POST', body: { phone } }),
+    []
+  )
+
+  /**
+   * Step two: the code proves the number and signs into whichever account
+   * owns it — carrying over an anonymous player from this device if the
+   * number is new.
+   */
+  const verifyPhone = useCallback(async ({ phone, code, displayName, coords }) => {
+    const res = await api('/api/auth/verify', {
       method: 'POST',
       body: {
-        email, password, displayName,
+        phone, code,
+        displayName: displayName ?? null,
         lat: coords?.lat ?? null, lng: coords?.lng ?? null,
         claimPlayerId: readPlayer()?.id ?? null,
       },
     })
-    return adopt(res.token, res.player)
-  }, [adopt])
-
-  const login = useCallback(async ({ email, password }) => {
-    const res = await api('/api/auth/login', { method: 'POST', body: { email, password } })
     return adopt(res.token, res.player)
   }, [adopt])
 
@@ -291,12 +297,13 @@ export function SessionProvider({ children }) {
   const value = useMemo(() => ({
     player, players, meta, status, connection, notice,
     incoming, outgoing, match, result, opponentProgress, opponentFinished,
-    register, login, leave, pushLocation, send, setNotice, setOutgoing, setIncoming,
+    requestPhoneCode, verifyPhone, leave, pushLocation, send,
+    setNotice, setOutgoing, setIncoming,
     clearResult: () => setResult(null),
   }), [
     player, players, meta, status, connection, notice, incoming, outgoing,
-    match, result, opponentProgress, opponentFinished, register, login, leave,
-    pushLocation, send,
+    match, result, opponentProgress, opponentFinished, requestPhoneCode,
+    verifyPhone, leave, pushLocation, send,
   ])
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

@@ -6,8 +6,9 @@ import fastifyStatic from '@fastify/static'
 
 import { PORT, HOST, DATABASE_PATH, IS_PRODUCTION } from './config.js'
 import { MIGRATED } from './db/index.js'
-import { getPlayer, touchPlayer, hasCredentials } from './db/players.js'
+import { getPlayer, touchPlayer, hasPhone } from './db/players.js'
 import { resolveSession, purgeExpiredSessions } from './db/sessions.js'
+import { purgeExpiredAuthCodes } from './db/authCodes.js'
 import authRoutes from './routes/auth.js'
 import joinRoutes from './routes/join.js'
 import playerRoutes from './routes/players.js'
@@ -34,17 +35,16 @@ app.decorate('requirePlayer', async (request, reply) => {
   // A session token from sign-in is the credential. The bare player id is
   // still accepted for accounts created before sign-in existed, so nobody
   // is locked out of a rating they already earned; it stops working for an
-  // account the moment it gains an email.
+  // account the moment it gains a verified number.
   const token = request.headers.authorization?.replace(/^Bearer\s+/i, '')
   const session = resolveSession(token)
   let player = session ? getPlayer(session.player_id) : null
 
   if (!player) {
     const legacyId = request.headers['x-player-id'] || request.body?.playerId
-    // getPlayer omits email by design, so ask the database directly —
-    // testing candidate.email here silently accepted every id.
+    // getPlayer omits the phone by design, so ask the database directly.
     const candidate = getPlayer(legacyId)
-    if (candidate && !hasCredentials(candidate.id)) player = candidate
+    if (candidate && !hasPhone(candidate.id)) player = candidate
   }
 
   if (!player) {
@@ -118,7 +118,10 @@ app.server.on('upgrade', (request, socket, head) => {
 
 /* -------------------------------------------------------------- startup */
 
-const housekeeping = setInterval(purgeExpiredSessions, 3_600_000)
+const housekeeping = setInterval(() => {
+  purgeExpiredSessions()
+  purgeExpiredAuthCodes()
+}, 3_600_000)
 housekeeping.unref()
 
 async function shutdown(signal) {
@@ -133,7 +136,7 @@ process.on('SIGINT', () => shutdown('SIGINT'))
 
 try {
   await app.listen({ port: PORT, host: HOST })
-  if (MIGRATED) app.log.warn('database was migrated off the phone-login schema')
+  if (MIGRATED) app.log.warn('database was migrated off a legacy players schema')
   app.log.info({ port: PORT, database: DATABASE_PATH }, 'gap is up')
 } catch (error) {
   app.log.error(error, 'failed to start')

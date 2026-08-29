@@ -18,16 +18,23 @@ const columnsOf = (table) =>
   db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name)
 
 /**
- * Moves a database created by the old phone-login build onto the join-by-name
- * schema. `CREATE TABLE IF NOT EXISTS` leaves an existing table alone, so an
- * already-deployed volume needs the table rebuilt rather than recreated.
- * Ratings and match history are carried across; the phone column is dropped.
+ * Rebuild the players table into the current shape, keeping ids, ratings and
+ * match history. Needed for two legacy generations:
+ *
+ *  - the original scaffold, which named players by `handle`
+ *  - the email era, whose inline `email TEXT UNIQUE` blocks a plain
+ *    ALTER TABLE DROP COLUMN
+ *
+ * A phone column is carried across when the old table has one — phone is
+ * once again the credential, so those numbers sign straight back in.
+ * Sessions reference players by id, which survives the rebuild, so nobody
+ * gets logged out.
  */
-function migrateFromPhoneAuth(log = console) {
-  const columns = columnsOf('players')
-  if (!columns.includes('phone') && !columns.includes('handle')) return false
+function rebuildPlayers(reason, columns, log) {
+  log?.warn?.(`rebuilding players table (${reason})`)
 
-  log.warn?.('migrating players table off phone auth')
+  const name = columns.includes('handle') ? 'handle' : 'display_name'
+  const phone = columns.includes('phone') ? 'phone' : 'NULL'
 
   // Foreign keys must be off while the table is swapped, and the pragma
   // cannot change inside a transaction.
@@ -37,6 +44,7 @@ function migrateFromPhoneAuth(log = console) {
       CREATE TABLE players_migrated (
         id           TEXT PRIMARY KEY,
         display_name TEXT NOT NULL,
+        phone        TEXT,
         rating       INTEGER NOT NULL DEFAULT 1000,
         peak_rating  INTEGER NOT NULL DEFAULT 1000,
         games        INTEGER NOT NULL DEFAULT 0,
@@ -50,12 +58,11 @@ function migrateFromPhoneAuth(log = console) {
         created_at   INTEGER NOT NULL
       )
     `)
-    const name = columns.includes('handle') ? 'handle' : 'display_name'
     db.exec(`
       INSERT INTO players_migrated
-        (id, display_name, rating, peak_rating, games, wins, losses, draws,
+        (id, display_name, phone, rating, peak_rating, games, wins, losses, draws,
          lat, lng, located_at, last_seen_at, created_at)
-      SELECT id, ${name}, rating, peak_rating, games, wins, losses, draws,
+      SELECT id, ${name}, ${phone}, rating, peak_rating, games, wins, losses, draws,
              lat, lng, located_at, last_seen_at, created_at
       FROM players
     `)
@@ -63,36 +70,35 @@ function migrateFromPhoneAuth(log = console) {
     db.exec('ALTER TABLE players_migrated RENAME TO players')
     db.exec('CREATE INDEX IF NOT EXISTS idx_players_rating   ON players (rating DESC)')
     db.exec('CREATE INDEX IF NOT EXISTS idx_players_location ON players (lat, lng)')
-    // The old code-based tables are gone for good. Sessions are recreated
-    // by the schema, so a phone-era database simply loses its old ones.
-    db.exec('DROP TABLE IF EXISTS auth_codes')
   })()
   db.pragma('foreign_keys = ON')
   return true
 }
 
-/**
- * Add sign-in columns to a players table created before accounts existed.
- * Both are nullable, so every account already in the database keeps working
- * until someone attaches an email and password to it.
- */
-function addAccountColumns(log) {
+function migrateLegacyPlayers(log) {
   const columns = columnsOf('players')
-  const added = []
-  if (!columns.includes('email')) {
-    db.exec('ALTER TABLE players ADD COLUMN email TEXT')
-    db.exec(
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_players_email_unique ' +
-      'ON players (email) WHERE email IS NOT NULL'
-    )
-    added.push('email')
+  if (columns.length === 0) return false // fresh database; the schema made it
+  if (columns.includes('handle')) return rebuildPlayers('handle era', columns, log)
+  if (columns.includes('email') || columns.includes('password_hash')) {
+    return rebuildPlayers('email era', columns, log)
   }
-  if (!columns.includes('password_hash')) {
-    db.exec('ALTER TABLE players ADD COLUMN password_hash TEXT')
-    added.push('password_hash')
+  return false
+}
+
+/**
+ * Every database converges on a nullable phone column with a partial unique
+ * index. Null stays legal — accounts predating phone sign-in keep working on
+ * their stored id until a number is attached.
+ */
+function ensurePhoneColumn(log) {
+  if (!columnsOf('players').includes('phone')) {
+    db.exec('ALTER TABLE players ADD COLUMN phone TEXT')
+    log?.warn?.('added phone column to players')
   }
-  if (added.length) log?.warn?.(`added account columns: ${added.join(', ')}`)
-  return added
+  db.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_players_phone_unique ' +
+    'ON players (phone) WHERE phone IS NOT NULL'
+  )
 }
 
 /**
@@ -118,9 +124,15 @@ function addDuelModeColumns(log) {
 }
 
 function migrate(log) {
-  const changed = migrateFromPhoneAuth(log)
-  db.exec('DROP TABLE IF EXISTS auth_codes')
-  addAccountColumns(log)
+  const changed = migrateLegacyPlayers(log)
+  // The original scaffold had an auth_codes table with a different shape;
+  // a table without code_hash cannot serve the current statements.
+  const authColumns = columnsOf('auth_codes')
+  if (authColumns.length > 0 && !authColumns.includes('code_hash')) {
+    db.exec('DROP TABLE auth_codes')
+    log?.warn?.('dropped incompatible legacy auth_codes table')
+  }
+  ensurePhoneColumn(log)
   addDuelModeColumns(log)
   return changed
 }

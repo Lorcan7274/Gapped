@@ -1,98 +1,134 @@
-import {
-  hashPassword, verifyPassword, normaliseEmail, checkPassword,
-} from '../lib/password.js'
+import { normalisePhone } from '../lib/phone.js'
+import { sendCode } from '../lib/sms.js'
+import { AUTH_CODE_ECHO } from '../config.js'
 import { normaliseDisplayName, normaliseCoords } from '../lib/validate.js'
 import { selfPlayer } from '../lib/serialize.js'
 import {
-  createPlayer, getPlayer, getPlayerByEmail, getPlayerWithSecret,
-  attachCredentials, rankOf,
+  createPlayer, getPlayer, getPlayerByPhone, attachPhone, hasPhone, rankOf,
 } from '../db/players.js'
+import { issueCode, checkCode, consumeCode } from '../db/authCodes.js'
 import { createSession, destroySession } from '../db/sessions.js'
-
-// Answering "no such email" separately from "wrong password" tells an
-// attacker which addresses are registered. One message covers both.
-const BAD_CREDENTIALS = 'That email and password do not match.'
 
 export default function authRoutes(broadcastPlayers) {
   return async function routes(app) {
     /**
-     * Create an account. If the caller is already playing as an account with
-     * no credentials — someone who joined before sign-in existed — the email
-     * and password attach to that account instead of starting a new one, so
-     * their rating and duel history carry over.
+     * Step one: ask for a code. The same endpoint serves signing up and
+     * signing back in — it neither knows nor says whether the number has an
+     * account, so it cannot be used to enumerate who plays.
      */
-    app.post('/api/auth/register', async (request, reply) => {
-      const email = normaliseEmail(request.body?.email)
-      const password = request.body?.password
-      const displayName = normaliseDisplayName(request.body?.displayName)
-
-      if (!email) return reply.code(400).send({ error: 'Enter a valid email address.' })
-      const passwordProblem = checkPassword(password)
-      if (passwordProblem) return reply.code(400).send({ error: passwordProblem })
-      if (!displayName) {
-        return reply.code(400).send({ error: 'Pick a name between 2 and 24 characters.' })
+    app.post('/api/auth/request-code', async (request, reply) => {
+      const phone = normalisePhone(request.body?.phone)
+      if (!phone) {
+        return reply.code(400).send({
+          error: 'Enter a phone number with its country code, like +353 87 123 4567.',
+        })
       }
-      if (getPlayerByEmail(email)) {
-        return reply.code(409).send({ error: 'That email is already registered.' })
+
+      const issued = issueCode(phone)
+      if (!issued.ok) {
+        return reply.code(429).send({
+          error: issued.reason === 'cooldown'
+            ? `Give it ${issued.retryInSeconds} seconds before asking for another code.`
+            : 'Too many codes for this number. Try again in an hour.',
+          retryInSeconds: issued.retryInSeconds,
+        })
+      }
+
+      sendCode(phone, issued.code, request.log)
+      return {
+        ok: true,
+        ttlSeconds: Math.round(issued.ttlMs / 1000),
+        // No SMS provider is wired, so outside production the code rides
+        // back in the response to keep the flow usable. See lib/sms.js.
+        ...(AUTH_CODE_ECHO ? { devCode: issued.code } : {}),
+      }
+    })
+
+    /**
+     * Step two: the code proves the number, and the number picks the
+     * account. In order: an account already owning it signs in; otherwise
+     * the anonymous account this device is playing as claims it; otherwise
+     * a new account is created, which needs a display name.
+     */
+    app.post('/api/auth/verify', async (request, reply) => {
+      const phone = normalisePhone(request.body?.phone)
+      const code = String(request.body?.code ?? '').trim()
+      if (!phone) {
+        return reply.code(400).send({ error: 'Enter a phone number with its country code.' })
+      }
+      if (!/^\d{6}$/.test(code)) {
+        return reply.code(400).send({ error: 'Enter the six-digit code.' })
+      }
+
+      const verdict = checkCode(phone, code)
+      if (verdict.status === 'too_many') {
+        return reply.code(429).send({ error: 'Too many wrong guesses. Ask for a fresh code.' })
+      }
+      if (verdict.status !== 'ok') {
+        return reply.code(401).send({ error: 'That code is wrong or has expired.' })
+      }
+
+      const signIn = (player, statusCode = 200) => {
+        consumeCode(verdict.id)
+        return reply.code(statusCode).send({
+          token: createSession(player.id),
+          player: selfPlayer(player, { rank: rankOf(player.id) }),
+        })
+      }
+
+      const existing = getPlayerByPhone(phone)
+      if (existing) {
+        request.log.info({ playerId: existing.id }, 'signed in by phone')
+        return signIn(existing)
+      }
+
+      const claimId = request.body?.claimPlayerId
+      const claimable = claimId ? getPlayer(claimId) : null
+      if (claimable && !hasPhone(claimable.id)) {
+        try {
+          attachPhone(claimable.id, phone)
+        } catch (error) {
+          // Raced by another verify for the same number; that one owns it.
+          if (String(error?.code || '').startsWith('SQLITE_CONSTRAINT')) {
+            const winner = getPlayerByPhone(phone)
+            if (winner) return signIn(winner)
+          }
+          throw error
+        }
+        request.log.info({ playerId: claimable.id }, 'attached phone to existing player')
+        broadcastPlayers()
+        return signIn(getPlayer(claimable.id))
+      }
+
+      // The code is deliberately not consumed on this refusal, so adding a
+      // name and resubmitting the same code succeeds.
+      const displayName = normaliseDisplayName(request.body?.displayName)
+      if (!displayName) {
+        return reply.code(400).send({
+          error: 'No account uses that number yet. Pick a name to create one.',
+          code: 'name_required',
+        })
       }
 
       const coords = normaliseCoords(request.body?.lat, request.body?.lng)
-      const passwordHash = await hashPassword(password)
-
-      // Claim the anonymous account this device is already using, if any.
-      const claimId = request.body?.claimPlayerId
-      const claimable = claimId ? getPlayerWithSecret(claimId) : null
       let player
       try {
-        if (claimable && !claimable.email) {
-          player = attachCredentials(claimable.id, email, passwordHash)
-          request.log.info({ playerId: player.id }, 'attached credentials to existing player')
-        } else {
-          player = createPlayer({
-            displayName,
-            email,
-            passwordHash,
-            lat: coords?.lat ?? null,
-            lng: coords?.lng ?? null,
-          })
-          request.log.info({ playerId: player.id }, 'registered')
-        }
+        player = createPlayer({
+          displayName,
+          phone,
+          lat: coords?.lat ?? null,
+          lng: coords?.lng ?? null,
+        })
       } catch (error) {
-        // Two registrations racing on one email: the unique index catches
-        // what the earlier existence check missed.
         if (String(error?.code || '').startsWith('SQLITE_CONSTRAINT')) {
-          return reply.code(409).send({ error: 'That email is already registered.' })
+          const winner = getPlayerByPhone(phone)
+          if (winner) return signIn(winner)
         }
         throw error
       }
-
+      request.log.info({ playerId: player.id }, 'registered by phone')
       broadcastPlayers()
-      return reply.code(201).send({
-        token: createSession(player.id),
-        player: selfPlayer(player, { rank: rankOf(player.id) }),
-      })
-    })
-
-    /** Sign in on any device and pick up the same account. */
-    app.post('/api/auth/login', async (request, reply) => {
-      const email = normaliseEmail(request.body?.email)
-      const password = request.body?.password
-      if (!email || typeof password !== 'string') {
-        return reply.code(400).send({ error: BAD_CREDENTIALS })
-      }
-
-      const row = getPlayerByEmail(email)
-      const ok = row?.password_hash
-        ? await verifyPassword(password, row.password_hash)
-        : false
-      if (!ok) return reply.code(401).send({ error: BAD_CREDENTIALS })
-
-      const player = getPlayer(row.id)
-      broadcastPlayers()
-      return {
-        token: createSession(player.id),
-        player: selfPlayer(player, { rank: rankOf(player.id) }),
-      }
+      return signIn(player, 201)
     })
 
     app.post('/api/auth/logout', async (request) => {
