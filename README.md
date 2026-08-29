@@ -8,12 +8,6 @@ a duel each phone shows one number the size of your palm: the gap in metres
 between you and your opponent, green when you lead and garnet when you trail.
 Win and your rating climbs. That is the whole game.
 
-## Team
-
-| Name | Role |
-| --- | --- |
-| _(fill in)_ | _(fill in)_ |
-
 ## What it does
 
 - **Join with an email and password.** Progress follows you to any device.
