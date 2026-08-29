@@ -37,7 +37,7 @@ export default function Home({ onFindDuel }) {
   if (!player) return null
 
   return (
-    <div className="flex min-h-[calc(100dvh-157px)] flex-col px-6 pt-2">
+    <div className="flex flex-1 flex-col px-6 pt-2">
       <div className="pt-3">
         <Crystal size={66} />
       </div>
