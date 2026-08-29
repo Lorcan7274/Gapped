@@ -30,6 +30,7 @@ export default function Battle() {
   const trackerRef = useRef(null)
   const startedAtRef = useRef(null)
   const lastReportRef = useRef(0)
+  const finishedRef = useRef(false)
   const wakeLockRef = useRef(null)
 
   /* Screen wake lock — the phone must not sleep mid-duel. */
@@ -85,11 +86,27 @@ export default function Battle() {
 
   useEffect(() => {
     if (phase !== 'running' || !match) return
+    finishedRef.current = false
     const tracker = createTracker({
       onUpdate: ({ metres, paceMsPerKm }) => {
         setMine(metres)
         setPace(paceMsPerKm)
+        if (finishedRef.current) return
+
         const now = Date.now()
+
+        // Crossing the line ends the duel. Reported once — the server
+        // ignores anything after the match leaves 'live'.
+        if (match.distanceM && metres >= match.distanceM) {
+          finishedRef.current = true
+          send('match:finish', {
+            matchId: match.id,
+            elapsedMs: now - startedAtRef.current,
+          })
+          setPhase('done')
+          return
+        }
+
         if (now - lastReportRef.current >= REPORT_INTERVAL_MS) {
           lastReportRef.current = now
           send('match:progress', {
@@ -175,6 +192,11 @@ export default function Battle() {
             <p className="display mt-1.5 text-[32px]">{Math.round(mine)} m</p>
           </div>
         </div>
+        {phase === 'done' ? (
+          <p className="py-4 text-center text-[15px] text-slate">
+            Finished. Waiting on the result…
+          </p>
+        ) : (
         <Button
           variant="outline"
           onClick={() => {
@@ -185,6 +207,7 @@ export default function Battle() {
         >
           Hold to end
         </Button>
+        )}
       </div>
     </div>
   )
