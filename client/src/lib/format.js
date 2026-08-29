@@ -1,3 +1,5 @@
+// Metres below a kilometre, kilometres above. There is no imperial path:
+// mixing the two was the confusing part, and one system beats a toggle.
 export function metres(value) {
   if (value == null) return '—'
   if (value < 1000) return `${Math.round(value)} m`
@@ -6,7 +8,7 @@ export function metres(value) {
 
 export function distanceLabel(value) {
   if (value == null) return '—'
-  return value < 1000 ? `${value}m` : `${value / 1000}k`
+  return value < 1000 ? `${value} m` : `${value / 1000} km`
 }
 
 export function clock(ms) {

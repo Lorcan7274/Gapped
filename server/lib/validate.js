@@ -25,8 +25,9 @@ export function normaliseCoords(lat, lng) {
   return usable ? { lat: parsedLat, lng: parsedLng } : null
 }
 
-// Race distances players can pick, in metres.
-export const DISTANCES = [400, 800, 1000, 1600, 3000, 5000]
+// Race distances players can pick, in metres. Metric only — the app has one
+// unit system, and the gap it is built around is measured in metres.
+export const DISTANCES = [400, 800, 1000, 2000, 3000, 5000]
 
 export function normaliseDistance(input) {
   const n = Number(input)

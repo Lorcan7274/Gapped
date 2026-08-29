@@ -107,7 +107,9 @@ export default function Battle() {
 
   const gap = Math.round(mine - opponentProgress)
   const ahead = gap >= 0
-  const gapText = useMemo(() => `${ahead ? '' : '−'}${Math.abs(gap)}`, [gap, ahead])
+  // "-23 meters behind" is a double negative. AHEAD / BEHIND carries the
+  // direction, so the number is always the plain magnitude.
+  const gapText = useMemo(() => String(Math.abs(gap)), [gap])
 
   if (!match) return null
 
@@ -122,42 +124,55 @@ export default function Battle() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-paper px-6 safe-t safe-b">
-      <header className="flex items-center justify-between border-b border-rule pb-4">
+      <header className="border-b border-rule pb-4">
         <span className="label text-ink">
           Versus {match.opponent?.displayName ?? 'Opponent'}
         </span>
-        <span className="nums label text-ink">{clock(remainingMs)}</span>
       </header>
 
       {/* The gap. Everything else on this screen defers to it. */}
       <div className="flex flex-1 flex-col items-center justify-center">
         <p
-          className={`display display-tight text-[124px] ${
+          className={`display display-tight text-[112px] ${
             ahead ? 'text-ink' : 'text-garnet'
           }`}
         >
           {gapText}
         </p>
-        <p className={`display text-[44px] ${ahead ? 'text-ink' : 'text-garnet'}`}>
+        <p className={`display text-[40px] ${ahead ? 'text-ink' : 'text-garnet'}`}>
           meters
         </p>
         <p
-          className="mt-5 text-[26px] font-700 uppercase"
+          className="mt-4 text-[26px] font-700 uppercase"
           style={{ letterSpacing: '0.22em' }}
         >
           {ahead ? 'Ahead' : 'Behind'}
         </p>
       </div>
 
-      <div className="border-t border-rule pt-5">
-        <div className="flex items-end justify-between pb-5">
+      {/* Time remaining sat in the header at label size and was unreadable
+          mid-run. It is the second thing you look at, so it gets real size
+          and sits low where a glance lands. */}
+      <div className="flex items-baseline justify-between border-t border-rule pt-4">
+        <Label>Time left</Label>
+        <p
+          className={`display text-[64px] ${
+            remainingMs <= 30_000 ? 'text-garnet' : 'text-ink'
+          }`}
+        >
+          {clock(remainingMs)}
+        </p>
+      </div>
+
+      <div className="border-t border-rule pt-4">
+        <div className="flex items-end justify-between pb-4">
           <div>
             <Label>Pace</Label>
-            <p className="display mt-1.5 text-[40px]">{paceLabel(pace)}</p>
+            <p className="display mt-1.5 text-[32px]">{paceLabel(pace)}</p>
           </div>
           <div className="text-right">
             <Label>Distance</Label>
-            <p className="display mt-1.5 text-[40px]">{Math.round(mine)}</p>
+            <p className="display mt-1.5 text-[32px]">{Math.round(mine)} m</p>
           </div>
         </div>
         <Button

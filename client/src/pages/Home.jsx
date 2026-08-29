@@ -6,8 +6,8 @@ import { Button, Label, Rule } from '../components/ui.jsx'
 
 const DUEL_TYPES = [
   { key: 'distance', name: 'Distance duel', detail: '10 minutes' },
-  { key: 'pace', name: 'Pace duel', detail: '1 mi' },
-  { key: 'sprint', name: 'Sprint duel', detail: '2 km' },
+  { key: 'pace', name: 'Pace duel', detail: '1 km' },
+  { key: 'sprint', name: 'Sprint duel', detail: '400 m' },
 ]
 
 export default function Home({ onFindDuel }) {
