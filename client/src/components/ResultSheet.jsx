@@ -16,6 +16,32 @@ export default function ResultSheet() {
     return () => clearTimeout(t)
   }, [result])
 
+  // Where a rating sits inside its own tier band. The old version used
+  // rating % 150, which meant nothing, and always animated up from zero —
+  // so a loss still looked like progress.
+  // Hooks must all run before the no-result return below: this sheet stays
+  // mounted when the result is dismissed, and dropping a hook on that render
+  // crashes React (error #300) and blanks the whole app.
+  const bar = useMemo(() => {
+    if (!result) return { from: 0, to: 0, tier: '', next: null }
+    const tiers = [...(meta?.tiers ?? [])].sort((a, b) => b.floor - a.floor)
+    const place = (rating) => {
+      if (tiers.length === 0) return 0
+      const i = tiers.findIndex((t) => rating >= t.floor)
+      const tier = tiers[i] ?? tiers[tiers.length - 1]
+      const ceiling = i > 0 ? tiers[i - 1].floor : tier.floor + 200
+      const span = Math.max(1, ceiling - tier.floor)
+      return Math.min(100, Math.max(0, ((rating - tier.floor) / span) * 100))
+    }
+    return {
+      from: place(result.ratingBefore),
+      to: place(result.ratingAfter),
+      tier: tiers.find((t) => result.ratingAfter >= t.floor)?.name ?? '',
+      next:
+        tiers[tiers.findIndex((t) => result.ratingAfter >= t.floor) - 1]?.name ?? null,
+    }
+  }, [meta, result])
+
   if (!result) return null
 
   const delta = result.ratingAfter - result.ratingBefore
@@ -33,28 +59,6 @@ export default function ResultSheet() {
       ? { tone: 'good', text: `Challenge sent to ${result.opponent.displayName}.` }
       : { tone: 'bad', text: 'Not connected. Try again in a moment.' })
   }
-
-  // Where a rating sits inside its own tier band. The old version used
-  // rating % 150, which meant nothing, and always animated up from zero —
-  // so a loss still looked like progress.
-  const bar = useMemo(() => {
-    const tiers = [...(meta?.tiers ?? [])].sort((a, b) => b.floor - a.floor)
-    const place = (rating) => {
-      if (tiers.length === 0) return 0
-      const i = tiers.findIndex((t) => rating >= t.floor)
-      const tier = tiers[i] ?? tiers[tiers.length - 1]
-      const ceiling = i > 0 ? tiers[i - 1].floor : tier.floor + 200
-      const span = Math.max(1, ceiling - tier.floor)
-      return Math.min(100, Math.max(0, ((rating - tier.floor) / span) * 100))
-    }
-    return {
-      from: place(result.ratingBefore),
-      to: place(result.ratingAfter),
-      tier: tiers.find((t) => result.ratingAfter >= t.floor)?.name ?? '',
-      next:
-        tiers[tiers.findIndex((t) => result.ratingAfter >= t.floor) - 1]?.name ?? null,
-    }
-  }, [meta, result.ratingBefore, result.ratingAfter])
 
   return (
     <div className="fixed inset-0 z-50 mx-auto max-w-[430px] flex flex-col bg-paper px-6 safe-t safe-b">

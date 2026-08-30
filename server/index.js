@@ -87,7 +87,11 @@ await app.register(playerRoutes)
 
 // Same origin as the API, so there is nothing to configure for CORS.
 if (fs.existsSync(clientDist)) {
-  await app.register(fastifyStatic, { root: clientDist, wildcard: false })
+  // wildcard:true resolves files from disk per request. With wildcard:false
+  // the plugin routes only the files present at boot, so a client rebuild
+  // under a running server served index.html in place of the new hashed
+  // bundle — a blank page until the process restarted.
+  await app.register(fastifyStatic, { root: clientDist, wildcard: true })
 
   // Client-side routing: anything that is not an API call or a real file
   // falls through to the SPA shell.
