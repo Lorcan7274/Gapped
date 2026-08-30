@@ -1,59 +1,45 @@
 import {
-  IS_PRODUCTION, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM,
+  IS_PRODUCTION, TEXTBEE_API_KEY, TEXTBEE_DEVICE_ID,
 } from '../config.js'
 
+const TEXTBEE_SEND_URL = 'https://api.textbee.dev/api/v1/gateway/send-sms'
+
 /**
- * Delivery for verification codes. With TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
- * and TWILIO_FROM set, codes go out as real texts; without them nothing is
- * sent — the code is logged, and (when AUTH_CODE_ECHO is on, the default
- * outside production) also returned in the request-code response so the flow
- * works end to end with no provider.
+ * Delivery for verification codes, through textbee (textbee.dev): an Android
+ * phone paired with the account sends the text over its own SIM.
+ *
+ * With no TEXTBEE_API_KEY set, the code is only logged — and, when
+ * AUTH_CODE_ECHO is on (the default outside production), returned in the
+ * request-code response so the flow works end to end without a provider.
+ *
+ * Throws when a configured send is refused or unreachable, so the route can
+ * tell the player instead of leaving them waiting for a text that never comes.
  */
-export const SMS_CONFIGURED = Boolean(
-  TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_FROM
-)
-
-/** True when the text was handed to Twilio; false means nothing was sent. */
 export async function sendCode(phone, code, log) {
-  if (!SMS_CONFIGURED) {
+  if (!TEXTBEE_API_KEY) {
     if (IS_PRODUCTION) {
-      log?.warn?.({ phone }, 'no SMS provider configured; the code below reaches nobody by itself')
+      log?.warn?.({ phone }, 'no TEXTBEE_API_KEY set; the code below reaches nobody by itself')
     }
-    // The log line is the delivery mechanism here, so the code belongs in it.
     log?.info?.({ phone, code }, 'verification code issued')
-    return false
+    return
   }
 
-  try {
-    const res = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization:
-            'Basic ' +
-            Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64'),
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          To: phone,
-          From: TWILIO_FROM,
-          Body: `Your Gap code is ${code}.`,
-        }),
-      }
-    )
-    if (!res.ok) {
-      const detail = await res.json().catch(() => null)
-      log?.error?.(
-        { phone, status: res.status, twilio: detail?.message ?? null },
-        'sms send failed'
-      )
-      return false
-    }
-    log?.info?.({ phone }, 'verification code texted')
-    return true
-  } catch (error) {
-    log?.error?.({ error, phone }, 'sms send failed')
-    return false
+  const res = await fetch(TEXTBEE_SEND_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': TEXTBEE_API_KEY,
+    },
+    body: JSON.stringify({
+      recipients: [phone],
+      message: `Your Gapped sign-in code is ${code}.`,
+      ...(TEXTBEE_DEVICE_ID ? { deviceId: TEXTBEE_DEVICE_ID } : {}),
+    }),
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`textbee refused the send (${res.status}): ${body.slice(0, 200)}`)
   }
+  log?.info?.({ phone }, 'verification code sent via textbee')
 }

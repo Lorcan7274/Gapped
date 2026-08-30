@@ -49,7 +49,7 @@ export default function Join() {
     <div className="flex min-h-dvh flex-col justify-between bg-paper px-6 safe-t safe-b">
       <header className="pt-8">
         <Crystal size={58} />
-        <h1 className="display mt-6 text-center text-[54px]">Gap</h1>
+        <h1 className="display mt-6 text-center text-[54px]">Gapped</h1>
         <p className="mx-auto mt-2 max-w-[16rem] text-center text-[15px] leading-relaxed text-slate">
           Running has never had a rank mode.
         </p>

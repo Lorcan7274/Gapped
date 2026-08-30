@@ -51,7 +51,7 @@ export default function App() {
   return (
     <div className="flex min-h-dvh flex-col bg-paper">
       <header className="flex items-center justify-between border-b border-rule px-6 py-3 safe-t">
-        <span className="label-13 label text-ink">Gap</span>
+        <span className="label-13 label text-ink">Gapped</span>
         <div className="flex items-center gap-4">
           <ConnectionStatus status={connection} />
           <LocationButton />
