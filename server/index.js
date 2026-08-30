@@ -27,26 +27,28 @@ const app = Fastify({
 
 /* --------------------------------------------------------------- identity */
 
-// The player id handed back at join — kept in localStorage by the client —
-// is the credential. It arrives as the x-player-id header, or as playerId in
-// the body for convenience. A 404 (not 401) tells the client the id is dead
-// and it should clear storage and show the join screen again.
-app.decorate('requirePlayer', async (request, reply) => {
-  // A session token from sign-in is the credential. The bare player id is
-  // still accepted for accounts created before sign-in existed, so nobody
-  // is locked out of a rating they already earned; it stops working for an
-  // account the moment it gains a verified number.
+// Who is calling, or null. A session token from sign-in is the credential.
+// The bare player id — the x-player-id header, or playerId in the body — is
+// still accepted for accounts created before sign-in existed, so nobody is
+// locked out of a rating they already earned; it stops working for an
+// account the moment it gains a verified number.
+app.decorate('resolvePlayer', (request) => {
   const token = request.headers.authorization?.replace(/^Bearer\s+/i, '')
   const session = resolveSession(token)
-  let player = session ? getPlayer(session.player_id) : null
+  const player = session ? getPlayer(session.player_id) : null
+  if (player) return player
 
-  if (!player) {
-    const legacyId = request.headers['x-player-id'] || request.body?.playerId
-    // getPlayer omits the phone by design, so ask the database directly.
-    const candidate = getPlayer(legacyId)
-    if (candidate && !hasPhone(candidate.id)) player = candidate
-  }
+  const legacyId = request.headers['x-player-id'] || request.body?.playerId
+  // getPlayer omits the phone by design, so ask the database directly.
+  const candidate = getPlayer(legacyId)
+  return candidate && !hasPhone(candidate.id) ? candidate : null
+})
 
+// The guard for routes that need a caller. A 404 (not 401) tells the client
+// the credential is dead and it should clear storage and show the join
+// screen again.
+app.decorate('requirePlayer', async (request, reply) => {
+  const player = app.resolvePlayer(request)
   if (!player) {
     return reply
       .code(404)

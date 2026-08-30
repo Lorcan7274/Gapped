@@ -29,7 +29,10 @@ export default async function playerRoutes(app) {
   app.get('/api/players/:id', async (request, reply) => {
     const row = getPlayer(request.params.id)
     if (!row) return reply.code(404).send({ error: 'No such player.' })
-    const viewer = getPlayer(request.headers['x-player-id'])
+    // The viewer personalises the row (distance, rating gap), so it must be
+    // a caller who actually holds that player's credential — not whatever
+    // id arrived in a header.
+    const viewer = app.resolvePlayer(request)
     return {
       player: publicPlayer(row, viewer, { rank: rankOf(row.id) }),
       matches: recentMatchesFor(row.id, 10).map((m) => publicMatch(m, row.id)),
