@@ -29,6 +29,12 @@ export const SESSION_TTL_MS = int(process.env.SESSION_TTL_DAYS, 30) * 86_400_000
 export const AUTH_CODE_TTL_MS = int(process.env.AUTH_CODE_TTL_SECONDS, 300) * 1000
 export const CHALLENGE_TTL_MS = int(process.env.CHALLENGE_TTL_SECONDS, 60) * 1000
 
+// Twilio delivers the verification texts when all three are set; leave them
+// unset and the code is only logged (and echoed in dev, per AUTH_CODE_ECHO).
+export const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || null
+export const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || null
+export const TWILIO_FROM = process.env.TWILIO_FROM || null
+
 // Whether the verification code is echoed in the request-code response.
 // Defaults to on outside production so sign-in works with no SMS provider;
 // force it with AUTH_CODE_ECHO=1 for a demo deploy, knowing anyone can then

@@ -104,6 +104,9 @@ npm run dev:client # Vite on :5173
 | `DISCOVERY_RADIUS_M` | `5000` | How far away an opponent can be. |
 | `DISCOVERY_RATING_SPREAD` | `250` | How far apart two ratings can be and still match. |
 | `AUTH_CODE_TTL_SECONDS` | `300` | How long a texted sign-in code stays valid. |
+| `TWILIO_ACCOUNT_SID` | unset | With `TWILIO_AUTH_TOKEN` and `TWILIO_FROM`, codes go out as real texts via Twilio. |
+| `TWILIO_AUTH_TOKEN` | unset | |
+| `TWILIO_FROM` | unset | The sending Twilio number, in E.164 (`+15551234567`). |
 | `AUTH_CODE_ECHO` | on outside production | Return the code in the request-code response. Forcing it on in production means anyone can sign in as any number. |
 
 ### Deploying
@@ -118,13 +121,13 @@ only fully works over HTTPS. `localhost` counts; a bare IP address does not.
 
 ## Known limits
 
-- **No SMS provider is wired.** `server/lib/sms.js` is the seam for one.
-  Until it is filled in, dev builds echo the code in the request-code
-  response, and production only logs it — so production sign-in means
-  reading codes out of the deploy logs. Codes are rate limited (30 s
-  cooldown, five per number per hour, five guesses each) but request-code
-  has no per-IP limit, so a public deploy with a real provider would want a
-  proxy in front of it.
+- **Texts need Twilio credentials.** `server/lib/sms.js` sends through
+  Twilio when the three `TWILIO_*` variables are set; without them nothing
+  is texted — dev builds echo the code in the request-code response, and
+  production only logs it, so sign-in means reading codes out of the deploy
+  logs. Codes are rate limited (30 s cooldown, five per number per hour,
+  five guesses each) but request-code has no per-IP limit, so a public
+  deploy with real texting would want a proxy in front of it.
 - **Legacy accounts are weakly held.** An account created before sign-in
   existed authenticates by its bare player id until a number is verified on
   it, so anyone holding that id is that player.

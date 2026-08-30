@@ -1,5 +1,5 @@
 import { normalisePhone } from '../lib/phone.js'
-import { sendCode } from '../lib/sms.js'
+import { sendCode, SMS_CONFIGURED } from '../lib/sms.js'
 import { AUTH_CODE_ECHO } from '../config.js'
 import { normaliseDisplayName, normaliseCoords } from '../lib/validate.js'
 import { selfPlayer } from '../lib/serialize.js'
@@ -34,12 +34,19 @@ export default function authRoutes(broadcastPlayers) {
         })
       }
 
-      sendCode(phone, issued.code, request.log)
+      const delivered = await sendCode(phone, issued.code, request.log)
+      // With a provider wired, "we texted you" must be true — otherwise the
+      // player stares at the code screen waiting for a text that never comes.
+      if (SMS_CONFIGURED && !delivered) {
+        return reply.code(502).send({
+          error: 'We could not text that number right now. Check it and try again.',
+        })
+      }
       return {
         ok: true,
         ttlSeconds: Math.round(issued.ttlMs / 1000),
-        // No SMS provider is wired, so outside production the code rides
-        // back in the response to keep the flow usable. See lib/sms.js.
+        // Without an SMS provider, outside production the code rides back
+        // in the response to keep the flow usable. See lib/sms.js.
         ...(AUTH_CODE_ECHO ? { devCode: issued.code } : {}),
       }
     })

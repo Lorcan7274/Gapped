@@ -36,7 +36,7 @@ One Node process, one origin: Fastify serves the JSON API, the static Vite build
 
 A session token from phone sign-in (`Authorization: Bearer`, or `?token=` on the WS URL) is the credential. A bare player id (`x-player-id` header / `?playerId=`) is still accepted, but **only for accounts with no verified phone number** — legacy accounts from before sign-in existed. The moment a number is attached, the bare id stops working. A dead credential gets HTTP 404 with `code: 'unknown_player'` (not 401), and WS close code 1008 — both deliberately distinguishable from "server down" so the client knows to clear localStorage and show Join instead of retrying forever.
 
-`server/lib/sms.js` is a stub seam — no SMS provider is wired. Outside production (or with `AUTH_CODE_ECHO=1`) the verification code is echoed in the request-code response, which is how sign-in works in development.
+`server/lib/sms.js` texts codes through Twilio when `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM` are set; unset, it only logs the code. Outside production (or with `AUTH_CODE_ECHO=1`) the verification code is also echoed in the request-code response, which is how sign-in works in development without credentials.
 
 ### Duels
 
