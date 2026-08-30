@@ -60,7 +60,7 @@ export default function Debug() {
   )
 
   return (
-    <div className="flex min-h-dvh flex-col gap-4 bg-paper px-4 py-6 safe-top safe-bottom">
+    <div className="flex min-h-dvh flex-col gap-4 bg-paper px-4 py-6 safe-t safe-b">
       <header>
         <p className="label text-muted">
           GPS test bench
@@ -152,12 +152,12 @@ export default function Debug() {
         <div className="flex gap-3">
           <Button
             className="flex-1"
-            variant={running ? 'ghost' : 'primary'}
+            variant={running ? 'outline' : 'primary'}
             onClick={() => (running ? tracker.stop() : (setError(null), tracker.start()))}
           >
             {running ? 'Stop' : 'Start'}
           </Button>
-          <Button variant="outline" onClick={() => tracker.reset()}>
+          <Button variant="outline" className="w-auto shrink-0 px-8" onClick={() => tracker.reset()}>
             Reset
           </Button>
         </div>

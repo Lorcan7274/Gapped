@@ -89,17 +89,14 @@ export default function Leaderboard() {
                       {row.rank}
                     </span>
                     {row.rank === 1 && (
-                      <span className="label shrink-0" style={{ color: '#A5A0F5' }}>
+                      <span className="label shrink-0 text-indigo-soft">
                         Apex
                       </span>
                     )}
                     <span className="flex-1 truncate text-[16px] font-700">
                       {row.displayName}
                     </span>
-                    <span
-                      className="label shrink-0"
-                      style={{ color: '#A5A0F5' }}
-                    >
+                    <span className="label shrink-0 text-indigo-soft">
                       You
                     </span>
                     <span className="nums w-12 shrink-0 text-right text-[16px] font-900">

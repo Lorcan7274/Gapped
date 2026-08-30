@@ -7,6 +7,7 @@ import Battle from './pages/Battle.jsx'
 import Leaderboard from './pages/Leaderboard.jsx'
 import Profile from './pages/Profile.jsx'
 import LocationButton from './components/LocationButton.jsx'
+import ThemeToggle from './components/ThemeToggle.jsx'
 import ChallengeSheet from './components/ChallengeSheet.jsx'
 import ResultSheet from './components/ResultSheet.jsx'
 import { Spinner, ConnectionStatus } from './components/ui.jsx'
@@ -52,8 +53,9 @@ export default function App() {
     <div className="flex min-h-dvh flex-col bg-paper">
       <header className="flex items-center justify-between border-b border-rule px-6 py-3 safe-t">
         <span className="label-13 label text-ink">Gapped</span>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <ConnectionStatus status={connection} />
+          <ThemeToggle className="-my-2" />
           <LocationButton />
         </div>
       </header>

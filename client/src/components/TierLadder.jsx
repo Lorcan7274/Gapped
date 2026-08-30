@@ -66,7 +66,7 @@ export default function TierLadder({ onClose }) {
                     style={{
                       width: `${progress}%`,
                       background: isCurrent
-                        ? 'linear-gradient(90deg, #101010, #4F46E5)'
+                        ? 'linear-gradient(90deg, var(--color-ink), var(--color-indigo))'
                         : 'var(--color-ink)',
                     }}
                   />

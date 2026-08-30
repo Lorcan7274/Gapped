@@ -2,9 +2,13 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { useSession } from '../state/session.jsx'
 import { usePhoneAuth } from '../lib/usePhoneAuth.js'
+import {
+  detectCountry, rememberCountry, toE164, isCompleteNumber,
+} from '../lib/countries.js'
 import { clock, distanceLabel, signed } from '../lib/format.js'
 import { formatDuration } from '../lib/duelTypes.js'
 import { Shard } from '../components/Crystal.jsx'
+import PhoneField from '../components/PhoneField.jsx'
 import { Button, Label, Rule, Spinner } from '../components/ui.jsx'
 
 const field =
@@ -22,8 +26,20 @@ function SecureAccount({ player, setNotice }) {
     stage, phone, setPhone, code, setCode,
     busy, error, devCode, resendIn, request, verify, back,
   } = usePhoneAuth()
+  const [country, setCountry] = useState(detectCountry)
+  const [national, setNational] = useState('')
 
-  const phoneReady = phone.replace(/\D/g, '').length >= 8
+  const phoneReady = isCompleteNumber(phone)
+
+  function changeCountry(next) {
+    setCountry(next)
+    rememberCountry(next)
+    setPhone(toE164(next, national))
+  }
+  function changeNational(next) {
+    setNational(next)
+    setPhone(toE164(country, next))
+  }
 
   async function submitNumber(event) {
     event.preventDefault()
@@ -51,15 +67,13 @@ function SecureAccount({ player, setNotice }) {
           </Button>
         ) : stage === 'number' ? (
           <form onSubmit={submitNumber} className="mt-4 flex flex-col gap-4">
-            <input
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+353 87 123 4567"
-              className={`nums ${field}`}
+            <PhoneField
+              size="md"
+              country={country}
+              onCountry={changeCountry}
+              national={national}
+              onNational={changeNational}
+              autoFocus
             />
             {error && <p className="text-[13px] text-garnet">{error}</p>}
             <Button type="submit" disabled={busy || !phoneReady}>

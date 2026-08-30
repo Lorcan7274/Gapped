@@ -10,11 +10,12 @@ Win and your rating climbs. That is the whole game.
 
 ## What it does
 
-- **Join with a name and a phone number.** A texted six-digit code proves the
-  number, and the number is the credential — no password, and progress follows
-  you to any device. Accounts from before sign-in existed keep working on
-  their stored player id, and can verify a number later from the profile
-  screen.
+- **Join with a phone number.** Pick your country, type your number, and a
+  texted six-digit code proves it. The number is the credential — no
+  password, and progress follows you to any device. Signing up and signing
+  in are the same path; a name is only asked for when the number is new.
+  Accounts from before sign-in existed keep working on their stored player
+  id, and can verify a number later from the profile screen.
 - **Find someone worth racing.** The lobby ranks every runner by a blend of how
   near they are and how close their rating is, with toggles for pure distance
   or pure rating gap. Runners without location are shown at the bottom rather
@@ -51,6 +52,12 @@ screen down to 13px for a ladder row.
 
 Every touch target is at least 56px.
 
+Light is the default. A small sun-and-moon switch in the header (and on the
+join screens) flips to a dark theme — the same system with paper and ink
+swapped and the accents lifted for contrast — and every colour on the page
+eases across together. The choice is remembered per device and applied
+before first paint, so a reload never flashes.
+
 ## Stack
 
 A single Node process serves everything from one origin, so there is no CORS to
@@ -72,8 +79,8 @@ server/
   ws/hub.js        presence, player-list broadcast, duels
 client/src/
   pages/           Join, Home, Challenge, Battle, Leaderboard, Profile, Debug
-  components/      Crystal, ui primitives, challenge and result sheets
-  lib/             api, socket, GPS tracker, ranking
+  components/      Crystal, ui primitives, phone field, theme toggle, sheets
+  lib/             api, socket, GPS tracker, ranking, countries, theme
   state/           session context
 ```
 

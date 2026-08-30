@@ -15,12 +15,44 @@
   --color-rule: #e4e2dc;
   --color-indigo: #4f46e5;
   --color-garnet: #a43f5e;
+  /* The accent as it reads on an ink surface (the "you" row of the ladder). */
+  --color-indigo-soft: #a5a0f5;
 
   --font-sans: 'Archivo', ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
+/* Dark is the same system with paper and ink swapped: warm near-black paper,
+   off-white ink, and the two accents lifted just enough to keep contrast.
+   index.html sets data-theme before first paint; lib/theme.js flips it. */
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --color-paper: #121211;
+  --color-ink: #f3f2ec;
+  --color-slate: #a6a39a;
+  --color-muted: #7f7c74;
+  --color-rule: #2c2b27;
+  --color-indigo: #7d76f2;
+  --color-garnet: #cf5f82;
+  --color-indigo-soft: #4f46e5;
+}
+
+/* While a theme change settles, every colour on the page eases together.
+   The switch keeps its own choreography. */
+html.theme-transition *:not(.theme-toggle, .theme-toggle *),
+html.theme-transition *:not(.theme-toggle, .theme-toggle *)::before,
+html.theme-transition *:not(.theme-toggle, .theme-toggle *)::after {
+  transition:
+    background-color 0.48s ease,
+    color 0.48s ease,
+    border-color 0.48s ease,
+    fill 0.48s ease,
+    stroke 0.48s ease !important;
+}
+
 @layer base {
   html {
+    background: var(--color-paper);
+    color-scheme: light;
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
   }
@@ -129,6 +161,10 @@
   flex: none;
   width: var(--gem-w, 78px);
   height: calc(var(--gem-w, 78px) * 1.282);
+  /* The join screen resizes the stone as the flow advances. */
+  transition:
+    width 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.55s cubic-bezier(0.4, 0, 0.2, 1);
   animation: gem-drift 5.5s ease-in-out infinite alternate;
   --gem-pale: #cfc9f5;
   --gem-mid: #4f46e5;
@@ -223,6 +259,125 @@
   100% { left: 115%; }
 }
 
+/* ------------------------------------------------------------------ join flow
+   One hero that grows to fill the welcome screen and compacts to a masthead
+   once the flow starts. Each step's content rises in beneath it. */
+
+.join-hero {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding-top: 1.5rem;
+  transition:
+    flex-grow 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    padding 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.join-hero--full { flex-grow: 1; padding-top: 0; }
+
+.join-title {
+  margin-top: 1.25rem;
+  font-size: 40px;
+  transition:
+    font-size 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    margin 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.join-hero--full .join-title { margin-top: 1.75rem; font-size: 58px; }
+
+.join-tagline {
+  max-height: 0;
+  margin-top: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.45s ease, opacity 0.3s ease, margin 0.45s ease;
+}
+.join-hero--full .join-tagline { max-height: 4rem; margin-top: 0.75rem; opacity: 1; }
+
+.stage-in { animation: stage-in 0.34s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes stage-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* --------------------------------------------------------------- theme toggle
+   A hairline pill. The knob carries a sun; flipping slides it across while
+   the rays draw in and a knob-coloured disc slips over the sun, leaving a
+   crescent. */
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  min-height: 56px;
+  flex: none;
+}
+.theme-toggle__track {
+  position: relative;
+  display: block;
+  width: 52px;
+  height: 30px;
+  border: 1.5px solid var(--color-rule);
+  border-radius: 999px;
+  transition: border-color 0.3s ease;
+}
+.theme-toggle__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  background: var(--color-rule);
+  color: var(--color-ink);
+  transition:
+    transform 0.42s cubic-bezier(0.34, 1.3, 0.64, 1),
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+.theme-toggle.is-dark .theme-toggle__knob { transform: translateX(22px); }
+
+.theme-toggle__icon { width: 17px; height: 17px; overflow: hidden; }
+.theme-toggle__rays {
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 0.22s ease, transform 0.42s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.theme-toggle.is-dark .theme-toggle__rays { opacity: 0; transform: scale(0.5) rotate(60deg); }
+
+.theme-toggle__sun {
+  fill: currentColor;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.42s cubic-bezier(0.34, 1.3, 0.64, 1), fill 0.3s ease;
+}
+.theme-toggle.is-dark .theme-toggle__sun { transform: scale(1.5); }
+
+.theme-toggle__bite {
+  fill: var(--color-rule);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: translate(11px, -11px) scale(1.25);
+  transition:
+    transform 0.42s cubic-bezier(0.34, 1.3, 0.64, 1),
+    opacity 0.2s ease,
+    fill 0.3s ease;
+}
+.theme-toggle.is-dark .theme-toggle__bite { opacity: 1; transform: translate(3.6px, -3.6px) scale(1.25); }
+
 @media (prefers-reduced-motion: reduce) {
-  .gem, .gem__gleam, .gem__shadow, .toast-in { animation: none; }
+  .gem, .gem__gleam, .gem__shadow, .toast-in, .stage-in { animation: none; }
+  .join-hero, .join-title, .join-tagline, .gem,
+  .theme-toggle__knob, .theme-toggle__rays, .theme-toggle__sun, .theme-toggle__bite {
+    transition: none;
+  }
 }

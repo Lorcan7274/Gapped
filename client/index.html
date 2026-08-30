@@ -17,6 +17,16 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Gapped</title>
+    <script>
+      // Apply a saved dark theme before first paint so a reload never flashes light.
+      try {
+        if (localStorage.getItem('gap.theme') === 'dark') {
+          document.documentElement.dataset.theme = 'dark'
+          document.documentElement.style.colorScheme = 'dark'
+          document.querySelector('meta[name="theme-color"]').content = '#121211'
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

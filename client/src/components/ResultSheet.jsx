@@ -92,7 +92,7 @@ export default function ResultSheet() {
               width: `${swept ? bar.to : bar.from}%`,
               background: lost
                 ? 'var(--color-garnet)'
-                : 'linear-gradient(90deg, #101010, #4F46E5)',
+                : 'linear-gradient(90deg, var(--color-ink), var(--color-indigo))',
             }}
           />
         </div>
