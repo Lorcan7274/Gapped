@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createTracker, MAX_ACCURACY_M, MAX_SPEED_MPS } from '../lib/tracker.js'
+import {
+  createTracker, MAX_ACCURACY_M, MAX_SPEED_MPS, MIN_STEP_M,
+} from '../lib/tracker.js'
 import { Button, Label } from '../components/ui.jsx'
 
 const paceLabel = (msPerKm) => {
@@ -67,7 +69,8 @@ export default function Debug() {
         </p>
         <h1 className="display text-[34px]">/debug</h1>
         <p className="mt-1 text-xs text-muted">
-          Rejecting accuracy &gt; {MAX_ACCURACY_M} m and speed &gt; {MAX_SPEED_MPS} m/s.
+          Smoothed. Rejecting accuracy &gt; {MAX_ACCURACY_M} m, speed &gt;{' '}
+          {MAX_SPEED_MPS} m/s, and holding steps under {MIN_STEP_M} m.
         </p>
       </header>
 
@@ -130,7 +133,7 @@ export default function Debug() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 border-b border-rule py-5 text-center">
+      <div className="grid grid-cols-4 gap-2 border-b border-rule py-5 text-center">
         <div>
           <p className="nums text-lg font-bold">{clock(state?.elapsedMs ?? 0)}</p>
           <p className="label text-muted">Elapsed</p>
@@ -144,6 +147,10 @@ export default function Debug() {
         <div>
           <p className="nums text-lg font-bold text-garnet">{state?.rejectedSpeed ?? 0}</p>
           <p className="label text-muted">Too fast</p>
+        </div>
+        <div>
+          <p className="nums text-lg font-bold text-muted">{state?.heldNoise ?? 0}</p>
+          <p className="label text-muted">Held</p>
         </div>
       </div>
 

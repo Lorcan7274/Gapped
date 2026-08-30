@@ -14,11 +14,62 @@ export function distanceMetres(a, b) {
 export const MAX_ACCURACY_M = 25
 /** Faster than this from the last accepted fix means the fix is wrong. */
 export const MAX_SPEED_MPS = 11
+/**
+ * A step must clear this before it counts as movement. Two phones sitting
+ * still on a table still report positions that wander by a few metres a
+ * second, and crediting every wobble is what made a 400 m lap read 500 m
+ * and two minutes of standing still read hundreds of metres.
+ */
+export const MIN_STEP_M = 8
+/**
+ * A step also has to be large relative to the fix's own uncertainty. A 3 m
+ * move reported with 20 m accuracy is not a measurement, it is noise.
+ */
+export const ACCURACY_STEP_RATIO = 0.5
+/**
+ * Metres per second of genuine movement the smoother expects. Higher trusts
+ * each raw fix more and tracks sharp changes faster; lower trusts the
+ * running estimate and rejects more noise. 2.5 keeps a bend honest without
+ * letting a stationary phone wander.
+ */
+export const PROCESS_NOISE_MPS = 2.5
+
+/**
+ * A position smoother, one Kalman step per axis.
+ *
+ * Filtering alone cannot fix distance: a fix inside the accuracy limit is
+ * still wrong by metres, and summing those errors is what made a 400 m lap
+ * read 500 m. Averaging each new fix against the running estimate, weighted
+ * by how uncertain the fix says it is, removes most of that before any
+ * distance is measured.
+ */
+function createSmoother() {
+  let lat = null, lng = null, variance = -1, at = 0
+  return {
+    push(nextLat, nextLng, accuracy, timestamp) {
+      const acc = Math.max(1, accuracy ?? 10)
+      if (variance < 0) {
+        lat = nextLat; lng = nextLng; variance = acc * acc; at = timestamp
+      } else {
+        const seconds = Math.max((timestamp - at) / 1000, 0)
+        at = timestamp
+        variance += seconds * PROCESS_NOISE_MPS * PROCESS_NOISE_MPS
+        const gain = variance / (variance + acc * acc)
+        lat += gain * (nextLat - lat)
+        lng += gain * (nextLng - lng)
+        variance = (1 - gain) * variance
+      }
+      return { lat, lng }
+    },
+    reset() { lat = null; lng = null; variance = -1; at = 0 },
+  }
+}
 /** Pace is averaged over this much recent movement. */
 export const PACE_WINDOW_MS = 30_000
 
 export const REJECT_ACCURACY = 'accuracy'
 export const REJECT_SPEED = 'speed'
+export const HELD_NOISE = 'noise'
 
 /**
  * Turns a stream of GPS fixes into a cumulative distance in metres.
@@ -40,8 +91,10 @@ export function createTracker({ onUpdate, onError } = {}) {
   let rejected = 0
   let rejectedAccuracy = 0
   let rejectedSpeed = 0
+  let heldNoise = 0
   let lastAccuracy = null
   let lastRejection = null
+  const smoother = createSmoother()
   // Recent accepted fixes: { at, total } — enough to average pace over a window.
   let trail = []
 
@@ -52,6 +105,7 @@ export function createTracker({ onUpdate, onError } = {}) {
       rejected,
       rejectedAccuracy,
       rejectedSpeed,
+      heldNoise,
       accuracy: lastAccuracy,
       lastRejection,
       elapsedMs: startedAt ? Date.now() - startedAt : 0,
@@ -89,11 +143,15 @@ export function createTracker({ onUpdate, onError } = {}) {
       return
     }
 
-    const point = { lat, lng, at }
+    // Smooth first, then measure. Distance is only ever taken between
+    // smoothed positions, never raw fixes.
+    const smoothed = smoother.push(lat, lng, accuracy, at)
+    const point = { lat: smoothed.lat, lng: smoothed.lng, at }
 
     if (previous) {
       const step = distanceMetres(previous, point)
       const seconds = Math.max((at - previous.at) / 1000, 0.001)
+
       if (step / seconds > MAX_SPEED_MPS) {
         rejected += 1
         rejectedSpeed += 1
@@ -101,6 +159,20 @@ export function createTracker({ onUpdate, onError } = {}) {
         emit()
         return
       }
+
+      // Hold the anchor until the displacement is big enough to be real.
+      // Crucially the anchor is NOT moved, so genuine slow movement still
+      // accumulates and gets credited in full once it clears the bar —
+      // only jitter, which returns to where it started, is dropped.
+      const floor = Math.max(MIN_STEP_M, (accuracy ?? 0) * ACCURACY_STEP_RATIO)
+      if (step < floor) {
+        heldNoise += 1
+        lastAccuracy = accuracy
+        lastRejection = HELD_NOISE
+        emit()
+        return
+      }
+
       total += step
     }
 
@@ -146,6 +218,7 @@ export function createTracker({ onUpdate, onError } = {}) {
       rejectedSpeed = 0
       lastAccuracy = null
       lastRejection = null
+      smoother.reset()
       trail = []
       startedAt = watchId != null ? Date.now() : null
       emit()
