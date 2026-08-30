@@ -17,6 +17,8 @@ export function SessionProvider({ children }) {
   // Live-race state, unchanged in shape from the socket's point of view.
   const [incoming, setIncoming] = useState(null)
   const [outgoing, setOutgoing] = useState(null)
+  /** Quick-match search: the format key we are queued for, or null. */
+  const [queued, setQueued] = useState(null)
   const [match, setMatch] = useState(null)
   const [result, setResult] = useState(null)
   const [opponentProgress, setOpponentProgress] = useState(0)
@@ -31,9 +33,11 @@ export function SessionProvider({ children }) {
   const matchRef = useRef(null)
   const incomingRef = useRef(null)
   const outgoingRef = useRef(null)
+  const queuedRef = useRef(null)
   useEffect(() => { matchRef.current = match }, [match])
   useEffect(() => { incomingRef.current = incoming }, [incoming])
   useEffect(() => { outgoingRef.current = outgoing }, [outgoing])
+  useEffect(() => { queuedRef.current = queued }, [queued])
 
   /* -------------------------------------------------------------- bootstrap */
 
@@ -137,6 +141,11 @@ export function SessionProvider({ children }) {
           setMatch(null)
           recoverResult(current)
         }
+        // A search does not survive our socket dropping server-side, so a
+        // reconnecting phone that was still searching quietly rejoins.
+        if (queuedRef.current && !(live && live.status === 'live')) {
+          socketRef.current?.send('queue:join', { format: queuedRef.current })
+        }
         break
       }
       case 'players':
@@ -176,8 +185,14 @@ export function SessionProvider({ children }) {
         if (inc && inc.challengeId === frame.challengeId) setIncoming(null)
         break
       }
+      case 'queue:joined':
+        setQueued(frame.format)
+        break
+      case 'queue:left':
+        setQueued(null)
+        break
       case 'match:start':
-        setIncoming(null); setOutgoing(null); setResult(null)
+        setIncoming(null); setOutgoing(null); setResult(null); setQueued(null)
         setOpponentProgress(0); setOpponentFinished(false)
         setMatch({
           id: frame.matchId, mode: frame.mode, distanceM: frame.distanceM,
@@ -284,6 +299,16 @@ export function SessionProvider({ children }) {
     return updated
   }, [playerId, send])
 
+  /** Quick match: queue for a fixed format; the server pairs and starts. */
+  const joinQueue = useCallback((format) => send('queue:join', { format }), [send])
+
+  const leaveQueue = useCallback(() => {
+    // Cleared locally first, so a reconnect cannot quietly rejoin a search
+    // the runner already cancelled.
+    setQueued(null)
+    send('queue:leave')
+  }, [send])
+
   const leave = useCallback(async () => {
     socketRef.current?.close()
     try {
@@ -297,13 +322,14 @@ export function SessionProvider({ children }) {
   const value = useMemo(() => ({
     player, players, meta, status, connection, notice,
     incoming, outgoing, match, result, opponentProgress, opponentFinished,
+    queued, joinQueue, leaveQueue,
     requestPhoneCode, verifyPhone, leave, pushLocation, send,
     setNotice, setOutgoing, setIncoming,
     clearResult: () => setResult(null),
   }), [
     player, players, meta, status, connection, notice, incoming, outgoing,
-    match, result, opponentProgress, opponentFinished, requestPhoneCode,
-    verifyPhone, leave, pushLocation, send,
+    match, result, opponentProgress, opponentFinished, queued, joinQueue,
+    leaveQueue, requestPhoneCode, verifyPhone, leave, pushLocation, send,
   ])
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

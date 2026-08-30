@@ -72,7 +72,7 @@ export default function Leaderboard() {
         {grouped.map(({ band, entries }) => (
           <section key={band.name}>
             <div className="flex items-center gap-2.5 border-b border-ink pb-2.5">
-              <Shard size={14} still />
+              <Shard size={14} tone={band.key} still />
               <span className="label text-ink">{band.name}</span>
             </div>
 

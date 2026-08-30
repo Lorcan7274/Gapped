@@ -142,7 +142,7 @@ export default function Profile() {
   return (
     <div className="px-6 pb-32 pt-6">
       <div className="flex items-center gap-4">
-        <Shard size={34} />
+        <Shard size={34} tone={player.tier?.key ?? 'sapphire'} />
         <div className="min-w-0">
           <h2 className="display truncate text-[34px]">{player.displayName}</h2>
           <p className="label mt-1 text-muted">{player.tier?.name}</p>

@@ -24,8 +24,11 @@ import {
 } from '../db/matches.js'
 import { publicPlayer, selfPlayer } from '../lib/serialize.js'
 import { distanceMetres } from '../lib/geo.js'
-import { normaliseDistance, normaliseDuration, normaliseCoords } from '../lib/validate.js'
-import { DISCOVERY_RADIUS_M, PRESENCE_TTL_MS } from '../config.js'
+import {
+  normaliseDistance, normaliseDuration, normaliseCoords,
+  normaliseFormat, QUICK_FORMATS,
+} from '../lib/validate.js'
+import { DISCOVERY_RADIUS_M, DISCOVERY_RATING_SPREAD, PRESENCE_TTL_MS } from '../config.js'
 import { db } from '../db/index.js'
 import { resolveSession } from '../db/sessions.js'
 
@@ -47,6 +50,12 @@ export function createHub(log) {
   const sockets = new Map()
   /** matchId -> { forfeitTimers: Map<playerId, Timeout>, deadlineTimer } */
   const liveMatches = new Map()
+  /**
+   * playerId -> { format, joinedAt } — runners waiting for a quick match.
+   * In memory only: queueing is a claim to be ready right now, so it must
+   * not outlive the process or the runner's last socket.
+   */
+  const matchQueue = new Map()
 
   const wss = new WebSocketServer({ noServer: true })
 
@@ -146,18 +155,28 @@ export function createHub(log) {
     }
   }
 
-  function startMatch(challenge) {
-    const a = getPlayer(challenge.from_id)
-    const b = getPlayer(challenge.to_id)
+  /**
+   * Create and announce a live match. Reached two ways: an accepted direct
+   * challenge, or two runners paired out of the quick-match queue — no
+   * challenge row then, because queueing up was the consent.
+   */
+  function beginMatch({ challengeId = null, aId, bId, mode = 'race', distanceM = 0, durationMs = null }) {
+    const a = getPlayer(aId)
+    const b = getPlayer(bId)
     if (!a || !b) return null
 
+    // Starting a match ends any search, however the match came about —
+    // accepting a direct challenge mid-queue must not leave you matchable.
+    matchQueue.delete(a.id)
+    matchQueue.delete(b.id)
+
     const match = createMatch({
-      challengeId: challenge.id,
+      challengeId,
       aId: a.id,
       bId: b.id,
-      mode: challenge.mode ?? 'race',
-      distanceM: challenge.distance_m,
-      durationMs: challenge.duration_ms ?? null,
+      mode,
+      distanceM,
+      durationMs,
       aRating: a.rating,
       bRating: b.rating,
     })
@@ -196,6 +215,17 @@ export function createHub(log) {
       'match started'
     )
     return match
+  }
+
+  function startMatch(challenge) {
+    return beginMatch({
+      challengeId: challenge.id,
+      aId: challenge.from_id,
+      bId: challenge.to_id,
+      mode: challenge.mode ?? 'race',
+      distanceM: challenge.distance_m,
+      durationMs: challenge.duration_ms ?? null,
+    })
   }
 
   /** Time is up on a timed duel: more metres wins, equal metres is a draw. */
@@ -389,6 +419,58 @@ export function createHub(log) {
       startMatch(challenge)
     },
 
+    /**
+     * Quick match. You queue for one of two fixed formats and get paired
+     * with the longest-waiting runner who fits: same format, both located,
+     * inside the discovery radius and rating spread. The match starts the
+     * moment a pair exists — queueing was the consent, nothing to accept.
+     */
+    [CLIENT.QUEUE_JOIN](ctx) {
+      const { socket, playerId, msg } = ctx
+      const key = normaliseFormat(msg.format)
+      if (!key) return fail(socket, 'Pick a duel format.', msg.id)
+      if (hasLiveMatch(playerId)) return fail(socket, 'You are already in a race.', msg.id)
+
+      const me = getPlayer(playerId)
+      if (!me) return fail(socket, 'Unknown player.', msg.id)
+      if (me.lat == null || me.lng == null) {
+        return fail(socket, 'Share your location to get matched.', msg.id)
+      }
+
+      // Map iteration is insertion order, so the first fit has waited longest.
+      for (const [candidateId, entry] of matchQueue) {
+        if (candidateId === playerId || entry.format !== key) continue
+        const them = getPlayer(candidateId)
+        if (!them || !isOnline(candidateId) || hasLiveMatch(candidateId)) {
+          matchQueue.delete(candidateId) // stale entry; sweep it as we pass
+          continue
+        }
+        if (them.lat == null || them.lng == null) continue
+        if (Math.abs(them.rating - me.rating) > DISCOVERY_RATING_SPREAD) continue
+        if (distanceMetres(me.lat, me.lng, them.lat, them.lng) > DISCOVERY_RADIUS_M) continue
+
+        const format = QUICK_FORMATS[key]
+        beginMatch({
+          aId: candidateId,
+          bId: playerId,
+          mode: format.mode,
+          distanceM: format.distanceM ?? 0,
+          durationMs: format.durationMs ?? null,
+        })
+        return
+      }
+
+      // Nobody fits yet: wait. Rejoining only retunes the format — Map.set
+      // on an existing key keeps your place in line.
+      matchQueue.set(playerId, { format: key, joinedAt: Date.now() })
+      send(socket, SERVER.QUEUE_JOINED, { id: msg.id ?? null, format: key })
+    },
+
+    [CLIENT.QUEUE_LEAVE](ctx) {
+      matchQueue.delete(ctx.playerId)
+      send(ctx.socket, SERVER.QUEUE_LEFT, { id: ctx.msg.id ?? null })
+    },
+
     [CLIENT.MATCH_PROGRESS](ctx) {
       const { socket, playerId, msg } = ctx
       const match = getMatch(String(msg.matchId ?? ''))
@@ -505,6 +587,8 @@ export function createHub(log) {
     socket.on('close', () => {
       unregister(playerId, socket)
       if (isOnline(playerId)) return
+      // A runner with no sockets left must not be paired into a race.
+      matchQueue.delete(playerId)
       broadcastPlayers()
       const current = getLiveMatchFor(playerId)
       if (current) armForfeit(current, playerId)
@@ -587,6 +671,7 @@ export function createHub(log) {
       if (runtime.deadlineTimer) clearTimeout(runtime.deadlineTimer)
     }
     liveMatches.clear()
+    matchQueue.clear()
     for (const socket of wss.clients) socket.terminate()
     wss.close()
   }

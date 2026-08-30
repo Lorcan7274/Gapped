@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { sortPlayers, formatDistance, SORTS } from '../lib/ranking.js'
-import { distanceLabel } from '../lib/format.js'
-import { durationsFrom } from '../lib/duelTypes.js'
+import { challengePayload, describe } from '../lib/duelTypes.js'
+import DuelSetup from '../components/DuelSetup.jsx'
 import { Label, EmptyState } from '../components/ui.jsx'
 
 export default function Challenge() {
-  const { player, players, meta, send, outgoing, setOutgoing } = useSession()
+  const { player, players, send, outgoing, setOutgoing, setNotice } = useSession()
   const [sort, setSort] = useState('match')
+  /** The runner a challenge sheet is open for, or null. */
   const [picking, setPicking] = useState(null)
 
   const others = useMemo(
@@ -19,6 +20,15 @@ export default function Challenge() {
 
   const placed = others.filter((p) => p.distanceM != null).length
   const unplaced = others.length - placed
+
+  /** A direct challenge carries the full custom menu — you know who you ask. */
+  function confirm(shape) {
+    const opponent = picking
+    setPicking(null)
+    if (!opponent) return
+    send('challenge', challengePayload(opponent.id, shape))
+    setNotice({ tone: 'good', text: `Challenge sent · ${describe(shape)}` })
+  }
 
   return (
     <div className="px-6 pb-32 pt-6">
@@ -99,53 +109,24 @@ export default function Challenge() {
                   </div>
                   <button
                     disabled={Boolean(outgoing) || !p.online}
-                    onClick={() => setPicking(picking === p.id ? null : p.id)}
+                    onClick={() => setPicking(p)}
                     className="btn btn-outline w-auto shrink-0 px-6 text-[13px] disabled:opacity-30"
                   >
-                    {picking === p.id ? 'Close' : p.online ? 'Duel' : 'Away'}
+                    {p.online ? 'Duel' : 'Away'}
                   </button>
                 </div>
-
-                {picking === p.id && (
-                  <div className="pb-4">
-                    <Label>Race to</Label>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {(meta?.distances ?? []).map((d) => (
-                        <button
-                          key={d}
-                          onClick={() => {
-                            send('challenge', { opponentId: p.id, mode: 'race', distanceM: d })
-                            setPicking(null)
-                          }}
-                          className="nums label min-h-[56px] rounded-full border border-ink px-5 text-ink"
-                        >
-                          {distanceLabel(d)}
-                        </button>
-                      ))}
-                    </div>
-                    <Label className="mt-4">Most metres in</Label>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {durationsFrom(meta).map((minutes) => (
-                        <button
-                          key={minutes}
-                          onClick={() => {
-                            send('challenge', {
-                              opponentId: p.id, mode: 'timed', durationMs: minutes * 60_000,
-                            })
-                            setPicking(null)
-                          }}
-                          className="nums label min-h-[56px] rounded-full border border-rule px-5 text-slate"
-                        >
-                          {minutes} min
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </li>
             )
           })}
         </ul>
+      )}
+
+      {picking && (
+        <DuelSetup
+          opponent={picking}
+          onConfirm={confirm}
+          onClose={() => setPicking(null)}
+        />
       )}
     </div>
   )

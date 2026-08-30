@@ -7,9 +7,10 @@ import { Shard } from './Crystal.jsx'
 import { Button, Label, Rule } from './ui.jsx'
 
 /**
- * Pick the shape of a duel. Opened from the nemesis Challenge button and
- * from the Custom row on the home screen, so a duel is never limited to the
- * three presets.
+ * Pick the shape of a direct challenge. Opened from the nemesis Challenge
+ * button and the lobby's Duel button — always aimed at a named opponent,
+ * and only here is the full menu of distances and durations on offer.
+ * Quick match runs two fixed formats instead (see Home).
  */
 export default function DuelSetup({ opponent, onConfirm, onClose }) {
   const { meta } = useSession()
@@ -30,12 +31,10 @@ export default function DuelSetup({ opponent, onConfirm, onClose }) {
   return (
     <div className="fixed inset-0 z-50 mx-auto flex max-w-[430px] flex-col overflow-y-auto bg-paper px-6 safe-t safe-b">
       <header className="flex items-center gap-4 pb-5 pt-2">
-        {opponent && <Shard size={30} tone="garnet" still />}
+        <Shard size={30} tone="garnet" still />
         <div className="min-w-0">
-          <Label>{opponent ? 'Challenge' : 'New duel'}</Label>
-          <h2 className="display mt-1 truncate text-[30px]">
-            {opponent ? opponent.displayName : 'Choose a format'}
-          </h2>
+          <Label>Challenge</Label>
+          <h2 className="display mt-1 truncate text-[30px]">{opponent.displayName}</h2>
         </div>
       </header>
 
@@ -91,7 +90,7 @@ export default function DuelSetup({ opponent, onConfirm, onClose }) {
 
       <div className="mt-auto flex flex-col gap-2 pt-8">
         <Button onClick={() => onConfirm({ type, unit, param })}>
-          {opponent ? 'Send challenge' : 'Find duel'}
+          Send challenge
         </Button>
         <Button variant="quiet" onClick={onClose}>
           Cancel

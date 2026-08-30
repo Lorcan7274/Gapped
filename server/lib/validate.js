@@ -42,4 +42,20 @@ export function normaliseDuration(input) {
   return Number.isFinite(n) && DURATION_MINUTES.includes(n / 60_000) ? n : null
 }
 
+// Quick match runs exactly two fixed formats: a race to a kilometre, or most
+// metres in ten minutes. A random opponent agrees to a format, not a
+// negotiation, and two pools are the most a small player base keeps liquid.
+// The full lists above stay on offer when you challenge someone directly.
+export const QUICK_FORMATS = {
+  race: { mode: 'race', distanceM: 1000 },
+  distance: { mode: 'timed', durationMs: 600_000 },
+}
+
+export function normaliseFormat(input) {
+  // hasOwn, not a truthiness lookup: 'toString' must not name a format.
+  return typeof input === 'string' && Object.hasOwn(QUICK_FORMATS, input)
+    ? input
+    : null
+}
+
 

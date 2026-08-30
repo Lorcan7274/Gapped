@@ -23,8 +23,9 @@ export default function ResultSheet() {
   // mounted when the result is dismissed, and dropping a hook on that render
   // crashes React (error #300) and blanks the whole app.
   const bar = useMemo(() => {
-    if (!result) return { from: 0, to: 0, tier: '', next: null }
+    if (!result) return { from: 0, to: 0, tier: '', tone: 'sapphire', next: null }
     const tiers = [...(meta?.tiers ?? [])].sort((a, b) => b.floor - a.floor)
+    const landed = tiers.find((t) => result.ratingAfter >= t.floor)
     const place = (rating) => {
       if (tiers.length === 0) return 0
       const i = tiers.findIndex((t) => rating >= t.floor)
@@ -36,7 +37,9 @@ export default function ResultSheet() {
     return {
       from: place(result.ratingBefore),
       to: place(result.ratingAfter),
-      tier: tiers.find((t) => result.ratingAfter >= t.floor)?.name ?? '',
+      tier: landed?.name ?? '',
+      // The stone is cut in the tier you landed in, not always sapphire.
+      tone: landed?.key ?? 'sapphire',
       next:
         tiers[tiers.findIndex((t) => result.ratingAfter >= t.floor) - 1]?.name ?? null,
     }
@@ -63,7 +66,7 @@ export default function ResultSheet() {
   return (
     <div className="fixed inset-0 z-50 mx-auto max-w-[430px] flex flex-col bg-paper px-6 safe-t safe-b">
       <div className="pt-8">
-        <Crystal size={66} />
+        <Crystal size={66} tone={bar.tone} />
       </div>
 
       <div className="mt-7 flex flex-col items-center gap-3 text-center">

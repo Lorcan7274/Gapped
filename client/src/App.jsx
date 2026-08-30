@@ -61,7 +61,7 @@ export default function App() {
       </header>
 
       <main className="flex flex-1 flex-col pb-[92px]">
-        {tab === 'home' && <Home onFindDuel={() => setTab('lobby')} />}
+        {tab === 'home' && <Home />}
         {tab === 'lobby' && <Challenge />}
         {tab === 'ladder' && <Leaderboard />}
         {tab === 'you' && <Profile />}

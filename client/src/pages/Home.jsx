@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { getCurrentPosition } from '../lib/tracker.js'
-import { DUEL_TYPES, describe } from '../lib/duelTypes.js'
+import { formatsFrom, formatDetail, challengePayload, describe } from '../lib/duelTypes.js'
 import Crystal, { Shard } from '../components/Crystal.jsx'
 import TierLadder from '../components/TierLadder.jsx'
 import DuelSetup from '../components/DuelSetup.jsx'
-import { Button, Label, Rule } from '../components/ui.jsx'
+import { Button, Label, Rule, Spinner } from '../components/ui.jsx'
 
-export default function Home({ onFindDuel }) {
-  const { player, players, meta, pushLocation, send, setNotice } = useSession()
-  const [type, setType] = useState('distance')
+export default function Home() {
+  const {
+    player, players, meta, send, setNotice, pushLocation,
+    queued, joinQueue, leaveQueue,
+  } = useSession()
+  const [formatKey, setFormatKey] = useState('race')
   const [ladderOpen, setLadderOpen] = useState(false)
   const [setup, setSetup] = useState(null)
 
@@ -34,21 +37,25 @@ export default function Home({ onFindDuel }) {
 
   if (!player) return null
 
-  const selected = DUEL_TYPES.find((t) => t.key === type) ?? DUEL_TYPES[0]
+  // While searching, the live search is the selection — the dot must not
+  // drift from what the server is actually matching.
+  const formats = formatsFrom(meta)
+  const activeKey = queued ?? formatKey
+  const selected = formats.find((f) => f.key === activeKey) ?? formats[0]
 
+  /** A direct challenge — the only place the full custom menu lives. */
   function confirm(shape) {
-    setSetup(null)
     const opponent = setup?.opponent
-    if (opponent) {
-      // Minutes make a timed duel (most metres before the clock runs out);
-      // metres make a race to the line. The server carries both.
-      send('challenge', shape.unit === 'minutes'
-        ? { opponentId: opponent.id, mode: 'timed', durationMs: shape.param * 60_000 }
-        : { opponentId: opponent.id, mode: 'race', distanceM: shape.param })
-      setNotice({ tone: 'good', text: `Challenge sent · ${describe(shape)}` })
-    } else {
-      onFindDuel?.(shape)
-    }
+    setSetup(null)
+    if (!opponent) return
+    send('challenge', challengePayload(opponent.id, shape))
+    setNotice({ tone: 'good', text: `Challenge sent · ${describe(shape)}` })
+  }
+
+  function chooseFormat(key) {
+    setFormatKey(key)
+    // Switching format mid-search moves the search, not just the dot.
+    if (queued && queued !== key) joinQueue(key)
   }
 
   return (
@@ -96,54 +103,52 @@ export default function Home({ onFindDuel }) {
         <Rule />
       </div>
 
-      {/* Duel type */}
+      {/* Quick match: two fixed formats, nothing to tune. Custom shapes live
+          behind a direct challenge, so the random pool never splinters. */}
       <div className="mt-1">
-        {DUEL_TYPES.map((option, i) => (
+        {formats.map((option, i) => (
           <div key={option.key}>
             {i > 0 && <Rule />}
             <button
-              onClick={() => setType(option.key)}
+              onClick={() => chooseFormat(option.key)}
               className="flex min-h-[56px] w-full items-center gap-4 py-3 text-left"
             >
               <span
                 className={`size-2.5 shrink-0 rounded-full ${
-                  type === option.key ? 'bg-indigo' : 'border border-muted'
+                  activeKey === option.key ? 'bg-indigo' : 'border border-muted'
                 }`}
               />
-              <span
-                className={`flex-1 text-[16px] ${
-                  type === option.key ? 'font-700 text-ink' : 'text-muted'
-                }`}
-              >
-                {option.name}
+              <span className="flex-1">
+                <span
+                  className={`block text-[16px] ${
+                    activeKey === option.key ? 'font-700 text-ink' : 'text-muted'
+                  }`}
+                >
+                  {option.name ?? option.key}
+                </span>
+                <span className="block text-[13px] text-muted">{option.blurb}</span>
               </span>
-              <span className="nums text-[13px] text-muted">{option.detail}</span>
+              <span className="nums text-[13px] text-muted">{formatDetail(option)}</span>
             </button>
           </div>
         ))}
         <Rule />
-        <button
-          onClick={() => setSetup({ opponent: null })}
-          className="flex min-h-[56px] w-full items-center gap-4 py-3 text-left"
-        >
-          <span className="size-2.5 shrink-0 rounded-full border border-muted" />
-          <span className="flex-1 text-[16px] text-muted">Custom</span>
-          <span className="label text-muted">Set it</span>
-        </button>
-        <Rule />
       </div>
 
       <div className="mt-auto flex flex-col gap-2.5 pt-7">
-        <Button
-          onClick={() =>
-            onFindDuel?.({ type: selected.key, unit: selected.unit, param: selected.param })
-          }
-        >
-          <span className="size-2 rounded-full bg-indigo" />
-          Find duel
-        </Button>
+        {queued ? (
+          <Button variant="outline" onClick={leaveQueue}>
+            <Spinner />
+            Searching · tap to cancel
+          </Button>
+        ) : (
+          <Button onClick={() => joinQueue(selected.key)}>
+            <span className="size-2 rounded-full bg-indigo" />
+            Find duel
+          </Button>
+        )}
         <p className="text-center text-[13px] text-muted">
-          {selected.name} · {selected.detail} · match within{' '}
+          {selected.name ?? selected.key} · {formatDetail(selected)} · match within{' '}
           {meta?.discovery?.ratingSpread ?? 250} rating
         </p>
       </div>
