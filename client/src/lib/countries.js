@@ -35,7 +35,7 @@ export const DIAL = Object.fromEntries(
 )
 
 const E164 = /^\+[1-9]\d{7,14}$/
-const STORAGE_KEY = 'gap.country'
+const STORAGE_KEY = 'gapped.country'
 
 let displayNames = null
 try {

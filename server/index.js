@@ -141,7 +141,7 @@ process.on('SIGINT', () => shutdown('SIGINT'))
 try {
   await app.listen({ port: PORT, host: HOST })
   if (MIGRATED) app.log.warn('database was migrated off a legacy players schema')
-  app.log.info({ port: PORT, database: DATABASE_PATH }, 'gap is up')
+  app.log.info({ port: PORT, database: DATABASE_PATH }, 'gapped is up')
 } catch (error) {
   app.log.error(error, 'failed to start')
   process.exit(1)

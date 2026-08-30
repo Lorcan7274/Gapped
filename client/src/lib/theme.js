@@ -6,7 +6,7 @@ import { useCallback, useSyncExternalStore } from 'react'
  * paint, so a reload never flashes the wrong theme — and every colour in
  * the app is a token that reads that attribute, so switching is one write.
  */
-const STORAGE_KEY = 'gap.theme'
+const STORAGE_KEY = 'gapped.theme'
 const TRANSITION_MS = 480
 const THEME_COLOR = { light: '#fafaf7', dark: '#121211' }
 

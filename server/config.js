@@ -12,7 +12,7 @@ export const HOST = process.env.HOST || '0.0.0.0'
 // The SQLite file location always comes from the environment so the deploy can
 // point it at a mounted volume that survives restarts.
 export const DATABASE_PATH = path.resolve(
-  process.env.DATABASE_PATH || './data/gap.db'
+  process.env.DATABASE_PATH || './data/gapped.db'
 )
 
 export const IS_PRODUCTION = process.env.NODE_ENV === 'production'

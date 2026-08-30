@@ -20,7 +20,7 @@
     <script>
       // Apply a saved dark theme before first paint so a reload never flashes light.
       try {
-        if (localStorage.getItem('gap.theme') === 'dark') {
+        if (localStorage.getItem('gapped.theme') === 'dark') {
           document.documentElement.dataset.theme = 'dark'
           document.documentElement.style.colorScheme = 'dark'
           document.querySelector('meta[name="theme-color"]').content = '#121211'

@@ -106,7 +106,7 @@ npm run dev:client # Vite on :5173
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `PORT` | `3000` | Railway injects this; we fall back to 3000 locally. |
-| `DATABASE_PATH` | `./data/gap.db` | Point at a mounted volume in production. |
+| `DATABASE_PATH` | `./data/gapped.db` | Point at a mounted volume in production. |
 | `HOST` | `0.0.0.0` | |
 | `DISCOVERY_RADIUS_M` | `5000` | How far away an opponent can be. |
 | `DISCOVERY_RATING_SPREAD` | `250` | How far apart two ratings can be and still match. |
@@ -118,7 +118,7 @@ npm run dev:client # Vite on :5173
 ### Deploying
 
 `railway.json` carries the build command, start command and a `/api/health`
-check. Add a volume, mount it at `/data`, and set `DATABASE_PATH=/data/gap.db` —
+check. Add a volume, mount it at `/data`, and set `DATABASE_PATH=/data/gapped.db` —
 without it the database lives in the container and every redeploy wipes every
 rating and duel.
 

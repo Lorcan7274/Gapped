@@ -1,5 +1,5 @@
-const PLAYER_KEY = 'gap.player'
-const TOKEN_KEY = 'gap.token'
+const PLAYER_KEY = 'gapped.player'
+const TOKEN_KEY = 'gapped.token'
 
 /** The joined player, kept in localStorage so a reload skips the join screen. */
 export function readPlayer() {

@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Gapped ("gap" in package.json): competitive matchmaking for real-world running. Players verify a phone number, find nearby runners at their rating, and duel head to head; during a duel each phone shows the live gap in metres to the opponent. Plain JavaScript throughout — no TypeScript, no test suite, no linter.
+Gapped: competitive matchmaking for real-world running. Players verify a phone number, find nearby runners at their rating, and duel head to head; during a duel each phone shows the live gap in metres to the opponent. Plain JavaScript throughout — no TypeScript, no test suite, no linter.
+
+The app is called Gapped everywhere — package names, log lines, localStorage keys, the database filename. Never shorten it to "gap"; that bare word is reserved for the distance between two runners.
 
 ## Commands
 
