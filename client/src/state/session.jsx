@@ -43,14 +43,18 @@ export function SessionProvider({ children }) {
     setStatus('anonymous')
   }, [])
 
+  // A token is enough to be signed in: the cached player is only a way to
+  // paint the screen before /api/me answers. Requiring both sent anyone
+  // whose cached blob was missing back to the sign-in screen holding a
+  // perfectly good session.
   useEffect(() => {
-    if (!playerId) {
+    if (!playerId && !token) {
       setStatus('anonymous')
       return
     }
     let cancelled = false
     setStatus('loading')
-    api('/api/me', { playerId })
+    api('/api/me', { playerId, token })
       .then((data) => {
         if (cancelled) return
         setPlayer(data.player)
@@ -59,7 +63,8 @@ export function SessionProvider({ children }) {
       })
       .catch((err) => {
         if (cancelled) return
-        if (err.isUnknownPlayer) forget()
+        // A dead token or id is worth clearing; a network blip is not.
+        if (err.isUnknownPlayer || err.status === 401) forget()
         // A network blip should not sign you out — keep the stored player and
         // let the socket's own reconnection handle it.
         else setStatus('ready')
@@ -67,7 +72,7 @@ export function SessionProvider({ children }) {
     return () => {
       cancelled = true
     }
-  }, [playerId, forget])
+  }, [playerId, token, forget])
 
   /* ----------------------------------------------------------------- socket */
 

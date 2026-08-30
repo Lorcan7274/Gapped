@@ -95,10 +95,19 @@ export default function Battle() {
 
         const now = Date.now()
 
-        // Crossing the line ends the duel. Reported once — the server
-        // ignores anything after the match leaves 'live'.
+        // Crossing the line. The server decides the winner from progress it
+        // has actually seen, so the crossing distance must be reported —
+        // sending only a finish claim left the server holding the previous
+        // throttled reading, a metre or two short, and the duel never ended.
         if (match.distanceM && metres >= match.distanceM) {
           finishedRef.current = true
+          send('match:progress', {
+            matchId: match.id,
+            progressM: metres,
+            elapsedMs: now - startedAtRef.current,
+          })
+          // Backstop, in case that frame is lost. The server validates it
+          // against its own record and ignores it otherwise.
           send('match:finish', {
             matchId: match.id,
             elapsedMs: now - startedAtRef.current,

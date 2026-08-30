@@ -35,12 +35,24 @@ const COUNTDOWN_MS = 5_000
 const DISCONNECT_GRACE_MS = 45_000
 // Floor on how often we relay a runner's position to their opponent.
 const TICK_MIN_INTERVAL_MS = 400
+/**
+ * Nobody covers ground faster than this. The world 100 m record is about
+ * 10.4 m/s averaged, so 12 leaves headroom for GPS overshoot while still
+ * making a forged distance obvious.
+ */
+const MAX_HUMAN_MPS = 12
+/** How long a player must wait before challenging the same person again. */
+const CHALLENGE_COOLDOWN_MS = 10_000
+/** Inbound frames allowed per socket per second before we stop answering. */
+const MAX_FRAMES_PER_SECOND = 25
 
 export function createHub(log) {
   /** playerId -> Set<WebSocket> — a player may have the app open twice. */
   const sockets = new Map()
   /** matchId -> { forfeitTimers: Map<playerId, Timeout> } */
   const liveMatches = new Map()
+  /** "from>to" -> timestamp, so one player cannot spam another with prompts. */
+  const lastChallengeAt = new Map()
 
   const wss = new WebSocketServer({ noServer: true })
 
@@ -265,6 +277,19 @@ export function createHub(log) {
         return fail(socket, 'They are too far away to race.', msg.id)
       }
 
+      // A pending challenge already exists, or one was just declined —
+      // either way, do not fire another prompt at them yet.
+      const pairKey = `${playerId}>${opponentId}`
+      const since = Date.now() - (lastChallengeAt.get(pairKey) ?? 0)
+      if (since < CHALLENGE_COOLDOWN_MS) {
+        return fail(
+          socket,
+          `Give them a moment — you can challenge again in ${Math.ceil((CHALLENGE_COOLDOWN_MS - since) / 1000)}s.`,
+          msg.id
+        )
+      }
+      lastChallengeAt.set(pairKey, Date.now())
+
       const challenge = createChallenge({ fromId: playerId, toId: opponentId, distanceM })
 
       send(socket, SERVER.CHALLENGE_SENT, {
@@ -332,11 +357,36 @@ export function createHub(log) {
 
       const metres = Number(msg.progressM)
       if (!Number.isFinite(metres) || metres < 0) return
-      // Progress only ever moves forward, and never past the finish line.
+
+      // The client reports its own distance, so the server has to decide
+      // whether that distance was physically possible in the time since the
+      // duel started. Without this, one forged frame wins any race.
       const previous = side === 'a' ? match.a_progress_m : match.b_progress_m
-      const clamped = Math.min(match.distance_m, Math.max(previous, metres))
+      const elapsedSeconds = Math.max((Date.now() - match.started_at) / 1000, 0.001)
+      const ceiling = elapsedSeconds * MAX_HUMAN_MPS
+      const clamped = Math.min(
+        match.distance_m,
+        Math.min(ceiling, Math.max(previous, metres))
+      )
+      if (metres > ceiling + 1) {
+        log.warn(
+          { matchId: match.id, playerId, claimed: Math.round(metres), ceiling: Math.round(ceiling) },
+          'progress claim exceeded human speed; clamped'
+        )
+      }
 
       recordProgress(match.id, side, clamped)
+
+      // The server decides when a duel is won, not the phone. Reaching the
+      // distance ends it here, so a client never needs to be believed.
+      if (match.distance_m && clamped >= match.distance_m) {
+        recordElapsed(match.id, side, Math.round(Date.now() - match.started_at))
+        sendTo(opponentOf(match, playerId), SERVER.MATCH_TICK, {
+          matchId: match.id, playerId, progressM: clamped, remainingM: 0, finished: true,
+        })
+        endMatch(match.id, playerId, 'finished')
+        return
+      }
 
       const throttleKey = `${match.id}:${playerId}`
       const last = socket.lastTick?.get(throttleKey) ?? 0
@@ -354,6 +404,12 @@ export function createHub(log) {
       })
     },
 
+    /**
+     * A finish claim is only a hint. The duel actually ends in the progress
+     * handler, where the distance has been checked against the clock. This
+     * exists so a client that crossed the line between progress reports is
+     * not left waiting, and it settles nothing on its own.
+     */
     [CLIENT.MATCH_FINISH](ctx) {
       const { socket, playerId, msg } = ctx
       const match = getMatch(String(msg.matchId ?? ''))
@@ -361,25 +417,27 @@ export function createHub(log) {
       const side = sideOf(match, playerId)
       if (!side) return
 
-      const elapsedMs = Number(msg.elapsedMs)
-      if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
-        return fail(socket, 'A finish needs an elapsed time.', msg.id)
+      const recorded = side === 'a' ? match.a_progress_m : match.b_progress_m
+      const elapsedMs = Date.now() - match.started_at
+
+      // Two independent checks: the server must already have seen you reach
+      // the line, and the time taken must be humanly possible.
+      const reachedTheLine = match.distance_m && recorded >= match.distance_m
+      const plausibleTime = elapsedMs >= (match.distance_m / MAX_HUMAN_MPS) * 1000
+
+      if (!reachedTheLine || !plausibleTime) {
+        log.warn(
+          { matchId: match.id, playerId, recorded, elapsedMs, distance: match.distance_m },
+          'finish claim rejected: not reached, or too fast to be real'
+        )
+        return fail(socket, 'Keep going — you have not reached the distance yet.', msg.id)
       }
 
-      recordProgress(match.id, side, match.distance_m)
       recordElapsed(match.id, side, Math.round(elapsedMs))
-
       sendTo(opponentOf(match, playerId), SERVER.MATCH_TICK, {
-        matchId: match.id,
-        playerId,
-        progressM: match.distance_m,
-        elapsedMs: Math.round(elapsedMs),
-        remainingM: 0,
-        finished: true,
+        matchId: match.id, playerId, progressM: match.distance_m,
+        elapsedMs: Math.round(elapsedMs), remainingM: 0, finished: true,
       })
-
-      // First across the line takes it. The opponent's own finish, if it
-      // arrives later, hits the `status !== 'live'` guard above.
       endMatch(match.id, playerId, 'finished')
     },
 
@@ -397,6 +455,8 @@ export function createHub(log) {
     const playerId = player.id
     socket.isAlive = true
     socket.lastTick = new Map()
+    socket.windowStart = Date.now()
+    socket.framesThisSecond = 0
     register(playerId, socket)
     touchPlayer(playerId)
 
@@ -418,6 +478,21 @@ export function createHub(log) {
     })
 
     socket.on('message', (raw) => {
+      // One misbehaving or looping client should not be able to make the
+      // server do unbounded work.
+      const now = Date.now()
+      if (now - socket.windowStart > 1000) {
+        socket.windowStart = now
+        socket.framesThisSecond = 0
+      }
+      socket.framesThisSecond += 1
+      if (socket.framesThisSecond > MAX_FRAMES_PER_SECOND) {
+        if (socket.framesThisSecond === MAX_FRAMES_PER_SECOND + 1) {
+          log.warn({ playerId }, 'socket exceeded its frame budget; dropping frames')
+        }
+        return
+      }
+
       const msg = decode(raw)
       if (!msg) return fail(socket, 'Malformed frame.')
       const handler = handlers[msg.type]

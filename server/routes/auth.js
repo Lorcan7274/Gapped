@@ -8,6 +8,7 @@ import {
   attachCredentials, rankOf,
 } from '../db/players.js'
 import { createSession, destroySession } from '../db/sessions.js'
+import { loginLimiter, registerLimiter, clientKey } from '../lib/ratelimit.js'
 
 // Answering "no such email" separately from "wrong password" tells an
 // attacker which addresses are registered. One message covers both.
@@ -22,6 +23,13 @@ export default function authRoutes(broadcastPlayers) {
      * their rating and duel history carry over.
      */
     app.post('/api/auth/register', async (request, reply) => {
+      const wait = registerLimiter.check(clientKey(request))
+      if (wait) {
+        return reply.code(429).send({
+          error: `Too many accounts from here. Try again in ${wait}s.`,
+        })
+      }
+
       const email = normaliseEmail(request.body?.email)
       const password = request.body?.password
       const displayName = normaliseDisplayName(request.body?.displayName)
@@ -72,11 +80,27 @@ export default function authRoutes(broadcastPlayers) {
         return reply.code(400).send({ error: BAD_CREDENTIALS })
       }
 
+      // Counted per address and per caller, so neither one account nor one
+      // machine can be used to grind through passwords.
+      for (const key of [`email:${email}`, `ip:${clientKey(request)}`]) {
+        const wait = loginLimiter.check(key)
+        if (wait) {
+          return reply.code(429).send({
+            error: `Too many attempts. Try again in ${wait}s.`,
+          })
+        }
+      }
+
       const row = getPlayerByEmail(email)
       const ok = row?.password_hash
         ? await verifyPassword(password, row.password_hash)
         : false
       if (!ok) return reply.code(401).send({ error: BAD_CREDENTIALS })
+
+      // A success clears the counters, so a legitimate player who fumbled a
+      // password is not locked out by their own retries.
+      loginLimiter.reset(`email:${email}`)
+      loginLimiter.reset(`ip:${clientKey(request)}`)
 
       const player = getPlayer(row.id)
       broadcastPlayers()

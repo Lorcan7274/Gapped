@@ -21,11 +21,14 @@ export function tierFor(rating) {
   return tier
 }
 
-// Newer players move faster so they reach their real rating sooner.
-export function kFactor(gamesPlayed, rating) {
-  if (gamesPlayed < 10) return 48
-  if (rating >= 1700) return 16
-  return 24
+// Newer players move faster so they reach their real rating sooner: the
+// first three duels count double.
+export const K_BASE = 32
+export const K_PLACEMENT = 64
+export const PLACEMENT_DUELS = 3
+
+export function kFactor(gamesPlayed) {
+  return gamesPlayed < PLACEMENT_DUELS ? K_PLACEMENT : K_BASE
 }
 
 export function expectedScore(ratingA, ratingB) {
@@ -42,8 +45,8 @@ export function settle(a, b, scoreA) {
   const expectedB = 1 - expectedA
   const scoreB = 1 - scoreA
 
-  const kA = kFactor(a.games, a.rating)
-  const kB = kFactor(b.games, b.rating)
+  const kA = kFactor(a.games)
+  const kB = kFactor(b.games)
 
   const nextA = Math.max(RATING_FLOOR, Math.round(a.rating + kA * (scoreA - expectedA)))
   const nextB = Math.max(RATING_FLOOR, Math.round(b.rating + kB * (scoreB - expectedB)))
