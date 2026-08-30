@@ -71,7 +71,7 @@ export default function Challenge() {
       {others.length === 0 ? (
         <EmptyState
           title="Nobody to challenge"
-          body="Nobody else has joined yet. Open Gap on another phone and they will show up here the moment they join."
+          body="Nobody else has joined yet. Open Gapped on another phone and they will show up here the moment they join."
         />
       ) : (
         <ul className="mt-2">

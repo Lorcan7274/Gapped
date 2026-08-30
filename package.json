@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Gap \u2014 competitive platform for real-world running.",
+  "description": "Gapped \u2014 competitive platform for real-world running.",
   "engines": {
     "node": "22.x"
   },
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "dev": "node --env-file-if-exists=.env --watch server/index.js",
     "dev:client": "npm --prefix client run dev",
     "build": "npm --prefix client install --no-audit --no-fund && npm --prefix client run build"
   },
