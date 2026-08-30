@@ -32,7 +32,7 @@ export async function sendCode(phone, code, log) {
     },
     body: JSON.stringify({
       recipients: [phone],
-      message: `Your Gapped sign-in code is ${code}.`,
+      message: `Your Gapped sign-in code is ${code}. Please do not reply.`,
       ...(TEXTBEE_DEVICE_ID ? { deviceId: TEXTBEE_DEVICE_ID } : {}),
     }),
     signal: AbortSignal.timeout(10_000),
