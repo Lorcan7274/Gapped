@@ -2,7 +2,6 @@ import { normaliseDisplayName, normaliseCoords } from '../lib/validate.js'
 import { selfPlayer } from '../lib/serialize.js'
 import {
   createPlayer,
-  getPlayer,
   setLocation,
   renamePlayer,
   rankOf,
@@ -84,8 +83,9 @@ export default function joinRoutes(broadcastPlayers) {
 
     /** Everyone who has joined. The socket pushes this same shape on change. */
     app.get('/api/players', async (request) => {
-      const viewerId = request.headers['x-player-id']
-      const viewer = getPlayer(viewerId)
+      // Resolved like every other route, so a forged x-player-id cannot
+      // read the list from another player's perspective.
+      const viewer = app.resolvePlayer(request)
       return {
         players: allPlayers().map((row) => publicPlayer(row, viewer)),
       }
