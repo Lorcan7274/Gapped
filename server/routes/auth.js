@@ -6,7 +6,7 @@ import { selfPlayer } from '../lib/serialize.js'
 import {
   createPlayer, getPlayer, getPlayerByPhone, attachPhone, hasPhone, rankOf,
 } from '../db/players.js'
-import { issueCode, checkCode, consumeCode } from '../db/authCodes.js'
+import { issueCode, checkCode, consumeCodes } from '../db/authCodes.js'
 import { createSession, destroySession } from '../db/sessions.js'
 
 export default function authRoutes(broadcastPlayers) {
@@ -69,14 +69,26 @@ export default function authRoutes(broadcastPlayers) {
 
       const verdict = checkCode(phone, code)
       if (verdict.status === 'too_many') {
-        return reply.code(429).send({ error: 'Too many wrong guesses. Ask for a fresh code.' })
+        return reply.code(429).send({
+          error: 'Too many wrong guesses. Ask for a fresh code.',
+          code: 'code_locked',
+        })
+      }
+      if (verdict.status === 'expired') {
+        return reply.code(401).send({
+          error: 'That code has expired. Ask for a fresh one.',
+          code: 'code_expired',
+        })
       }
       if (verdict.status !== 'ok') {
-        return reply.code(401).send({ error: 'That code is wrong or has expired.' })
+        return reply.code(401).send({
+          error: 'That code is not right. Use the newest text we sent you.',
+          code: 'code_invalid',
+        })
       }
 
       const signIn = (player, statusCode = 200) => {
-        consumeCode(verdict.id)
+        consumeCodes(phone)
         return reply.code(statusCode).send({
           token: createSession(player.id),
           player: selfPlayer(player, { rank: rankOf(player.id) }),

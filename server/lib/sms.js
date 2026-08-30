@@ -14,6 +14,9 @@ const TEXTBEE_SEND_URL = 'https://api.textbee.dev/api/v1/gateway/send-sms'
  *
  * Throws when a configured send is refused or unreachable, so the route can
  * tell the player instead of leaving them waiting for a text that never comes.
+ * Acceptance is not delivery: textbee queues the text and the phone sends it
+ * when it wakes, so the batch id it answers with is logged to line a server
+ * request up with the dashboard when a text goes missing.
  */
 export async function sendCode(phone, code, log) {
   if (!TEXTBEE_API_KEY) {
@@ -41,5 +44,7 @@ export async function sendCode(phone, code, log) {
     const body = await res.text().catch(() => '')
     throw new Error(`textbee refused the send (${res.status}): ${body.slice(0, 200)}`)
   }
-  log?.info?.({ phone }, 'verification code sent via textbee')
+  // { data: { success, message, smsBatchId, recipientCount, estimatedCompletionAt? } }
+  const body = await res.json().catch(() => null)
+  log?.info?.({ phone, textbee: body?.data ?? null }, 'verification code queued with textbee')
 }

@@ -20,12 +20,17 @@ const latestPending = db.prepare(`
   WHERE phone = ? AND consumed_at IS NULL
   ORDER BY created_at DESC LIMIT 1
 `)
+const livePending = db.prepare(`
+  SELECT * FROM auth_codes
+  WHERE phone = ? AND consumed_at IS NULL AND expires_at >= ?
+  ORDER BY created_at DESC
+`)
 const countRecent = db.prepare(
   'SELECT COUNT(*) AS n FROM auth_codes WHERE phone = ? AND created_at >= ?'
 )
 const bumpAttempts = db.prepare('UPDATE auth_codes SET attempts = attempts + 1 WHERE id = ?')
 const markConsumed = db.prepare(
-  'UPDATE auth_codes SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL'
+  'UPDATE auth_codes SET consumed_at = ? WHERE phone = ? AND consumed_at IS NULL'
 )
 const purge = db.prepare('DELETE FROM auth_codes WHERE expires_at < ?')
 
@@ -54,23 +59,34 @@ export function issueCode(phone) {
 }
 
 /**
- * Check a guess against the newest outstanding code for a number. Does NOT
- * consume on success — the route consumes only once it knows it can finish
- * the sign-in, so "add a name and resubmit" works on the same code.
- * Returns 'ok' (with the row id), 'invalid', 'expired' or 'too_many'.
+ * Check a guess against every live code for a number — unconsumed and not
+ * yet expired. Texts arrive late and out of order (a gateway phone replaying
+ * its queue, an iOS keyboard suggesting the previous text), so the code a
+ * player has in hand is not always the last one issued; any of them proves
+ * the number for as long as it is live. Does NOT consume on success — the
+ * route consumes only once it knows it can finish the sign-in, so "add a
+ * name and resubmit" works on the same code.
+ * Returns 'ok', 'invalid', 'expired' or 'too_many'.
  */
 export function checkCode(phone, code) {
-  const row = latestPending.get(phone)
-  if (!row || row.expires_at < now()) return { status: 'expired' }
-  if (row.attempts >= MAX_ATTEMPTS) return { status: 'too_many' }
-  if (!safeEqual(hashCode(phone, code), row.code_hash)) {
-    bumpAttempts.run(row.id)
-    return { status: 'invalid' }
-  }
-  return { status: 'ok', id: row.id }
+  const live = livePending.all(phone, now())
+  if (live.length === 0) return { status: 'expired' }
+  const open = live.filter((row) => row.attempts < MAX_ATTEMPTS)
+  if (open.length === 0) return { status: 'too_many' }
+
+  const guess = hashCode(phone, code)
+  if (open.some((row) => safeEqual(guess, row.code_hash))) return { status: 'ok' }
+
+  // A miss was tried against every open code, so it counts against each of
+  // them: five misses lock the lot, whichever texts actually arrived.
+  for (const row of open) bumpAttempts.run(row.id)
+  return { status: 'invalid' }
 }
 
-/** Retire a checked code once its sign-in actually completed. */
-export const consumeCode = (id) => markConsumed.run(now(), id).changes === 1
+/**
+ * Retire every outstanding code for a number once its sign-in completed.
+ * Any of them could have signed in, so none may stay usable in an inbox.
+ */
+export const consumeCodes = (phone) => markConsumed.run(now(), phone).changes > 0
 
 export const purgeExpiredAuthCodes = () => purge.run(now())
