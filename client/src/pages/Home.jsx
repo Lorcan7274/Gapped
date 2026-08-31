@@ -26,14 +26,23 @@ export default function Home() {
     }
   }, [pushLocation])
 
-  // The nemesis is whoever sits closest to you on rating.
+  // The nemesis is your closest rival you could race right now: nearest on
+  // rating, online, and inside the challenge radius. distanceM is null when
+  // either side has no location, which also rules a runner out.
   const nemesis = useMemo(() => {
-    const others = players.filter((p) => p.id !== player?.id)
-    if (others.length === 0) return null
-    return [...others].sort(
+    const radiusM = meta?.discovery?.radiusM ?? 5000
+    const rivals = players.filter(
+      (p) =>
+        p.id !== player?.id &&
+        p.online &&
+        p.distanceM != null &&
+        p.distanceM <= radiusM
+    )
+    if (rivals.length === 0) return null
+    return [...rivals].sort(
       (a, b) => (a.ratingGap ?? Infinity) - (b.ratingGap ?? Infinity)
     )[0]
-  }, [players, player?.id])
+  }, [players, player?.id, meta])
 
   if (!player) return null
 
@@ -48,14 +57,24 @@ export default function Home() {
     const opponent = setup?.opponent
     setSetup(null)
     if (!opponent) return
-    send('challenge', challengePayload(opponent.id, shape))
-    setNotice({ tone: 'good', text: `Challenge sent · ${describe(shape)}` })
+    // send() is false when the socket is down — nothing reached the server,
+    // so claiming "sent" would leave them waiting on a challenge nobody got.
+    const sent = send('challenge', challengePayload(opponent.id, shape))
+    setNotice(sent
+      ? { tone: 'good', text: `Challenge sent · ${describe(shape)}` }
+      : { tone: 'bad', text: 'Not connected. Try again in a moment.' })
+  }
+
+  function search(key) {
+    if (!joinQueue(key)) {
+      setNotice({ tone: 'bad', text: 'Not connected. Try again in a moment.' })
+    }
   }
 
   function chooseFormat(key) {
     setFormatKey(key)
     // Switching format mid-search moves the search, not just the dot.
-    if (queued && queued !== key) joinQueue(key)
+    if (queued && queued !== key) search(key)
   }
 
   return (
@@ -97,7 +116,9 @@ export default function Home() {
           </div>
         ) : (
           <p className="py-4 text-[15px] text-slate">
-            No nemesis yet. Nobody else has joined.
+            {players.length > 1
+              ? 'No nemesis right now. Nobody close by is online.'
+              : 'No nemesis yet. Nobody else has joined.'}
           </p>
         )}
         <Rule />
@@ -142,15 +163,7 @@ export default function Home() {
             Searching · tap to cancel
           </Button>
         ) : (
-          <Button
-            onClick={() => {
-              // send() returns false on a closed socket; silence here would
-              // leave the runner tapping a button that does nothing.
-              if (!joinQueue(selected.key)) {
-                setNotice({ tone: 'bad', text: 'Not connected. Try again in a moment.' })
-              }
-            }}
-          >
+          <Button onClick={() => search(selected.key)}>
             <span className="size-2 rounded-full bg-indigo" />
             Find duel
           </Button>

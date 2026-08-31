@@ -429,12 +429,21 @@ export function createHub(log) {
       const { socket, playerId, msg } = ctx
       const key = normaliseFormat(msg.format)
       if (!key) return fail(socket, 'Pick a duel format.', msg.id)
-      if (hasLiveMatch(playerId)) return fail(socket, 'You are already in a race.', msg.id)
+
+      // A refused join also answers QUEUE_LEFT: none of these paths can
+      // coexist with a queue entry, so the socket that asked converges on
+      // "not searching" instead of showing a search the server is not running
+      // (a reconnecting phone quietly rejoins, and its rejoin can be refused).
+      const refuse = (message) => {
+        fail(socket, message, msg.id)
+        send(socket, SERVER.QUEUE_LEFT, { id: msg.id ?? null })
+      }
+      if (hasLiveMatch(playerId)) return refuse('You are already in a race.')
 
       const me = getPlayer(playerId)
-      if (!me) return fail(socket, 'Unknown player.', msg.id)
+      if (!me) return refuse('Unknown player.')
       if (me.lat == null || me.lng == null) {
-        return fail(socket, 'Share your location to get matched.', msg.id)
+        return refuse('Share your location to get matched.')
       }
 
       // Map iteration is insertion order, so the first fit has waited longest.
@@ -461,14 +470,18 @@ export function createHub(log) {
       }
 
       // Nobody fits yet: wait. Rejoining only retunes the format — Map.set
-      // on an existing key keeps your place in line.
+      // on an existing key keeps your place in line. The queue is keyed per
+      // player, not per socket, so every device this runner has open is told:
+      // otherwise a second tab keeps offering "Find duel" for a search that
+      // is already running, and closing the tab that queued looks like a
+      // cancel it never was.
       matchQueue.set(playerId, { format: key, joinedAt: Date.now() })
-      send(socket, SERVER.QUEUE_JOINED, { id: msg.id ?? null, format: key })
+      sendTo(playerId, SERVER.QUEUE_JOINED, { id: msg.id ?? null, format: key })
     },
 
     [CLIENT.QUEUE_LEAVE](ctx) {
       matchQueue.delete(ctx.playerId)
-      send(ctx.socket, SERVER.QUEUE_LEFT, { id: ctx.msg.id ?? null })
+      sendTo(ctx.playerId, SERVER.QUEUE_LEFT, { id: ctx.msg.id ?? null })
     },
 
     [CLIENT.MATCH_PROGRESS](ctx) {

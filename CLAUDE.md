@@ -54,6 +54,8 @@ React 19 + Vite + Tailwind v4. No router: `App.jsx` switches four tabs from loca
 
 Swiss-minimal editorial: warm off-white paper, near-black ink, structure from 1px hairlines only — no cards, no grey fills, no shadows. Archivo, 900-weight numerals, uppercase 11–13px labels. Exactly two colours: indigo `#4F46E5` (the accent) and garnet `#A43F5E` (reserved for the nemesis and for trailing in a duel). Touch targets ≥ 56px. Units are metric everywhere. Match this before adding any new UI.
 
+The signed-out onboarding (`pages/Onboarding.jsx`, `.ob-*` styles) is the one deliberate exception: a committed-dark world — near-black, aurora gradients, its own dial pad — that ignores the paper/ink theme and ends the moment sign-in does. The tier crystals (`components/Crystal.jsx`) are generated SVG meshes, seeded per tier so every render cuts the same stone.
+
 ## Deployment
 
 Railway, configured by `railway.json` (build, start, `/api/health` check). `DATABASE_PATH` must point at a mounted volume in production or every redeploy wipes the database. `/api/health` reports the built commit from Railway's env vars — the only way to tell from outside whether a push actually deployed.

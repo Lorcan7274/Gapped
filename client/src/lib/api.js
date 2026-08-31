@@ -58,10 +58,12 @@ export function writeToken(token) {
 }
 
 export class ApiError extends Error {
-  constructor(message, status, code) {
+  constructor(message, status, code, retryInSeconds) {
     super(message)
     this.status = status
     this.code = code
+    // Rate-limit replies say how long to wait; the resend timer honours it.
+    this.retryInSeconds = retryInSeconds ?? null
   }
   /** The stored id is dead; the caller should clear it and re-join. */
   get isUnknownPlayer() {
@@ -85,7 +87,12 @@ export async function api(path, { method = 'GET', body, playerId, token } = {}) 
   })
   const payload = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new ApiError(payload.error || `Request failed (${res.status})`, res.status, payload.code)
+    throw new ApiError(
+      payload.error || `Request failed (${res.status})`,
+      res.status,
+      payload.code,
+      payload.retryInSeconds
+    )
   }
   return payload
 }

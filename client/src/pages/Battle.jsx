@@ -223,7 +223,7 @@ export default function Battle() {
           {gapText}
         </p>
         <p className={`display text-[40px] ${ahead ? 'text-ink' : 'text-garnet'}`}>
-          meters
+          metres
         </p>
         <p
           className="mt-4 text-[26px] font-700 uppercase"

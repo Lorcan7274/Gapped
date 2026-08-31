@@ -27,7 +27,11 @@ export function usePhoneAuth() {
   }, [stage])
   const resendIn = Math.max(0, Math.ceil((resendAt - nowMs) / 1000))
 
-  /** Ask for a code and move to the code stage. */
+  /**
+   * Ask for a code and move to the code stage. Returns null on success, or
+   * the error — the code step has no inline error line, so a resend that
+   * fails there needs the return to say anything at all.
+   */
   const request = useCallback(async () => {
     setBusy(true)
     setError(null)
@@ -38,8 +42,16 @@ export function usePhoneAuth() {
       setStage('code')
       setResendAt(Date.now() + RESEND_COOLDOWN_S * 1000)
       setNowMs(Date.now())
+      return null
     } catch (err) {
       setError(err.message)
+      // Asked too soon: fold the server's cooldown into the resend timer so
+      // the button counts down to when a retry will actually work.
+      if (err.retryInSeconds) {
+        setResendAt(Date.now() + err.retryInSeconds * 1000)
+        setNowMs(Date.now())
+      }
+      return err
     } finally {
       setBusy(false)
     }

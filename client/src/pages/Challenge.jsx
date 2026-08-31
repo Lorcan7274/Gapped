@@ -26,8 +26,12 @@ export default function Challenge() {
     const opponent = picking
     setPicking(null)
     if (!opponent) return
-    send('challenge', challengePayload(opponent.id, shape))
-    setNotice({ tone: 'good', text: `Challenge sent · ${describe(shape)}` })
+    // send() is false when the socket is down — nothing reached the server,
+    // so claiming "sent" would leave them waiting on a challenge nobody got.
+    const sent = send('challenge', challengePayload(opponent.id, shape))
+    setNotice(sent
+      ? { tone: 'good', text: `Challenge sent · ${describe(shape)}` }
+      : { tone: 'bad', text: 'Not connected. Try again in a moment.' })
   }
 
   return (

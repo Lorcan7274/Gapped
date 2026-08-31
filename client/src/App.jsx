@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSession } from './state/session.jsx'
-import Join from './pages/Join.jsx'
+import Onboarding from './pages/Onboarding.jsx'
 import Home from './pages/Home.jsx'
 import Challenge from './pages/Challenge.jsx'
 import Battle from './pages/Battle.jsx'
@@ -37,7 +37,7 @@ export default function App() {
     )
   }
 
-  if (status === 'anonymous') return <Join />
+  if (status === 'anonymous') return <Onboarding />
 
   // A live duel owns the whole screen.
   if (match) {

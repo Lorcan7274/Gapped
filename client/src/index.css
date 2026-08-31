@@ -153,71 +153,43 @@ html.theme-transition *:not(.theme-toggle, .theme-toggle *)::after {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ------------------------------------------------------------------- crystal */
+/* ------------------------------------------------------------------- crystal
+   The stone itself is an SVG mesh generated in Crystal.jsx; this is only its
+   frame — proportions, drift, the gleam sweeping inside the silhouette, and
+   the squeezing ground ellipse. Each shape carries its own height ratio and
+   clip polygon in CSS vars. */
 
 .gem {
   position: relative;
   display: block;
   flex: none;
   width: var(--gem-w, 78px);
-  height: calc(var(--gem-w, 78px) * 1.282);
-  /* The join screen resizes the stone as the flow advances. */
+  height: calc(var(--gem-w, 78px) * var(--gem-ratio, 1.282));
   transition:
     width 0.55s cubic-bezier(0.4, 0, 0.2, 1),
     height 0.55s cubic-bezier(0.4, 0, 0.2, 1);
   animation: gem-drift 5.5s ease-in-out infinite alternate;
-  --gem-pale: #cfc9f5;
-  --gem-mid: #4f46e5;
-  --gem-deep: #161447;
 }
-
-.gem--garnet   { --gem-pale: #e8bccb; --gem-mid: #a43f5e; --gem-deep: #3d1421; }
-
-/* One stone per tier, so the ladder reads at a glance. */
-.gem--bronze   { --gem-pale: #edcdb4; --gem-mid: #b2724a; --gem-deep: #40230f; }
-.gem--silver   { --gem-pale: #e6e9ed; --gem-mid: #9aa7b4; --gem-deep: #2f3740; }
-.gem--gold     { --gem-pale: #f5e3ab; --gem-mid: #c8a233; --gem-deep: #493409; }
-.gem--sapphire { --gem-pale: #cfc9f5; --gem-mid: #4f46e5; --gem-deep: #161447; }
-.gem--amethyst { --gem-pale: #ddc9f7; --gem-mid: #8b5cf6; --gem-deep: #2c1650; }
-.gem--diamond  { --gem-pale: #e2f0ff; --gem-mid: #6aa8ff; --gem-deep: #14304f; }
 
 .gem--still { animation: none; }
 
-.gem__face {
+.gem__svg {
   position: absolute;
   inset: 0;
-  clip-path: polygon(50% 0%, 88% 23%, 100% 60%, 50% 100%, 0% 60%, 12% 23%);
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 1px 2px rgba(10, 10, 30, 0.3));
 }
 
-.gem__base {
-  background: linear-gradient(
-    158deg,
-    var(--gem-pale) 0%,
-    var(--gem-mid) 46%,
-    var(--gem-deep) 100%
-  );
-}
-
-/* Cut faces. Light on the upper left, shadow on the lower right. */
-.gem__f1 { background: rgba(255, 255, 255, 0.5);  clip-path: polygon(50% 0%, 12% 23%, 50% 44%); }
-.gem__f2 { background: rgba(255, 255, 255, 0.28); clip-path: polygon(50% 0%, 88% 23%, 50% 44%); }
-.gem__f3 { background: rgba(255, 255, 255, 0.15); clip-path: polygon(12% 23%, 0% 60%, 50% 44%); }
-.gem__f4 { background: rgba(16, 20, 71, 0.16);    clip-path: polygon(88% 23%, 100% 60%, 50% 44%); }
-.gem__f5 { background: rgba(16, 20, 71, 0.32);    clip-path: polygon(50% 44%, 100% 60%, 50% 100%); }
-.gem__f6 { background: rgba(16, 20, 71, 0.2);     clip-path: polygon(50% 44%, 0% 60%, 50% 100%); }
-
-/* Two bright slivers down the spine. */
-.gem__sliver {
+/* The gleam is clipped to the silhouette so light never leaves the stone. */
+.gem__mask {
   position: absolute;
-  top: 2%;
-  bottom: 4%;
-  width: 1px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0.05));
+  inset: 0;
+  clip-path: var(--gem-clip);
+  overflow: hidden;
 }
-.gem__sliver--a { left: 47%; }
-.gem__sliver--b { left: 53%; opacity: 0.55; }
 
-/* A skewed bar of light sweeping across the stone. */
 .gem__gleam {
   position: absolute;
   top: -20%;
@@ -227,7 +199,7 @@ html.theme-transition *:not(.theme-toggle, .theme-toggle *)::after {
   background: linear-gradient(
     90deg,
     rgba(255,255,255,0) 0%,
-    rgba(255,255,255,0.72) 50%,
+    rgba(255,255,255,0.6) 50%,
     rgba(255,255,255,0) 100%
   );
   animation: gem-gleam 5.5s ease-in-out infinite;
@@ -236,13 +208,35 @@ html.theme-transition *:not(.theme-toggle, .theme-toggle *)::after {
 .gem__shadow {
   position: absolute;
   left: 50%;
-  bottom: -14%;
+  bottom: -10%;
   width: 74%;
   height: 4px;
   transform: translateX(-50%);
   border: 1px solid var(--color-rule);
   border-radius: 999px;
   animation: gem-squeeze 5.5s ease-in-out infinite alternate;
+}
+
+/* Tier weather around the cluster: glints, arcs, beams, stars. */
+.gemfx { pointer-events: none; }
+.gemfx--twinkle {
+  position: absolute;
+  overflow: visible;
+  animation: twinkle 3s ease-in-out infinite;
+}
+.gemfx--arcs {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.gemfx--arc { animation: arc-chain 4s steps(1) infinite; }
+.gemfx--beam {
+  position: absolute;
+  transform-origin: top;
+  border-radius: 999px;
+  animation: void-beam 3.1s ease-out infinite;
 }
 
 @keyframes gem-drift {
@@ -258,48 +252,294 @@ html.theme-transition *:not(.theme-toggle, .theme-toggle *)::after {
   55%  { left: 115%; }
   100% { left: 115%; }
 }
-
-/* ------------------------------------------------------------------ join flow
-   One hero that grows to fill the welcome screen and compacts to a masthead
-   once the flow starts. Each step's content rises in beneath it. */
-
-.join-hero {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding-top: 1.5rem;
-  transition:
-    flex-grow 0.55s cubic-bezier(0.4, 0, 0.2, 1),
-    padding 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+@keyframes twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); }
+  50%      { opacity: 1; transform: scale(1) rotate(90deg); }
 }
-.join-hero--full { flex-grow: 1; padding-top: 0; }
-
-.join-title {
-  margin-top: 1.25rem;
-  font-size: 40px;
-  transition:
-    font-size 0.55s cubic-bezier(0.4, 0, 0.2, 1),
-    margin 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+@keyframes arc-chain {
+  0%, 100% { opacity: 0; }
+  1%, 3%   { opacity: 1; }
+  4%       { opacity: 0; }
 }
-.join-hero--full .join-title { margin-top: 1.75rem; font-size: 58px; }
-
-.join-tagline {
-  max-height: 0;
-  margin-top: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: max-height 0.45s ease, opacity 0.3s ease, margin 0.45s ease;
+@keyframes void-beam {
+  0%        { opacity: 0; transform: scaleY(0.1); }
+  7%        { opacity: 0.95; transform: scaleY(1); }
+  30%       { opacity: 0.45; }
+  46%, 100% { opacity: 0; transform: scaleY(1); }
 }
-.join-hero--full .join-tagline { max-height: 4rem; margin-top: 0.75rem; opacity: 1; }
 
 .stage-in { animation: stage-in 0.34s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
 @keyframes stage-in {
   from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: none; }
 }
+
+/* ----------------------------------------------------------------- onboarding
+   The signed-out flow is its own world: committed near-black, lit by aurora
+   gradients, with the crystal centre stage. It ignores the paper/ink theme on
+   purpose — the app proper starts on the other side of it. */
+
+.ob {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: #050507;
+  color: #fafaf7;
+  /* The cluster's ground ellipse reads the rule token; on this floor the
+     hairline must be pale whatever the app theme says. */
+  --color-rule: rgba(250, 250, 247, 0.25);
+}
+
+.ob-top { padding-top: max(3.25rem, env(safe-area-inset-top)); }
+.ob-bottom { padding-bottom: max(2.5rem, env(safe-area-inset-bottom)); }
+
+/* Aurora crown over the phone, code and profile steps. Glows sit at z -1 so
+   in-flow content never needs lifting above them. */
+.ob-aurora {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    130% 62% at 50% -12%,
+    rgba(109, 40, 217, 0.8),
+    rgba(79, 70, 229, 0.38) 42%,
+    rgba(30, 27, 75, 0.16) 62%,
+    rgba(5, 5, 7, 0) 80%
+  );
+}
+
+/* Each welcome page carries its own glow, so it travels with the swipe. */
+.ob-glow { position: absolute; z-index: -1; pointer-events: none; }
+.ob-glow--indigo {
+  left: -20%; right: -20%; top: 18%; height: 54%;
+  background: radial-gradient(closest-side, rgba(79, 70, 229, 0.32), rgba(79, 70, 229, 0) 72%);
+}
+.ob-glow--green {
+  left: -20%; right: -20%; top: 22%; height: 50%;
+  background: radial-gradient(closest-side, rgba(74, 222, 128, 0.14), rgba(74, 222, 128, 0) 72%);
+}
+.ob-glow--violet {
+  left: -20%; right: -20%; top: 20%; height: 52%;
+  background: radial-gradient(closest-side, rgba(124, 58, 237, 0.24), rgba(124, 58, 237, 0) 72%);
+}
+
+/* The splash: the mark tightens in over the glow, holds, then the whole
+   sheet swells and dissolves onto the welcome screen beneath it. */
+.ob-splash {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  background: #050507;
+  transition:
+    opacity 1s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ob-splash__glow {
+  position: absolute;
+  left: -30%; right: -30%; top: 12%; height: 66%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(109, 40, 217, 0.5), rgba(79, 70, 229, 0) 74%);
+  transition: opacity 1s ease;
+}
+.ob-splash__mark {
+  position: relative;
+  font-size: 52px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+  transition:
+    letter-spacing 1s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.8s ease;
+}
+.ob-splash.is-enter .ob-splash__glow,
+.ob-splash.is-out .ob-splash__glow { opacity: 0; }
+.ob-splash.is-enter .ob-splash__mark,
+.ob-splash.is-out .ob-splash__mark { letter-spacing: 0.16em; opacity: 0; }
+.ob-splash.is-out {
+  opacity: 0;
+  transform: scale(1.12);
+  pointer-events: none;
+}
+
+/* Welcome carousel: three full-width pages on scroll snap. */
+.ob-carousel {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.ob-carousel::-webkit-scrollbar { display: none; }
+.ob-slide {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  flex: none;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+.ob-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(250, 250, 247, 0.3);
+  transition: background 0.25s ease;
+}
+.ob-dot.is-on { background: #fafaf7; }
+
+/* No margin here: the pages place headings with spacing utilities, and an
+   unlayered margin would silently beat them. */
+.ob-h1 {
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
+  text-transform: uppercase;
+  text-wrap: pretty;
+}
+.ob-h1--step { font-size: 32px; }
+
+/* Pills. The submit pill eases between its dim and lit states as the
+   number completes. */
+.ob-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 56px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition:
+    background 0.3s ease,
+    color 0.3s ease,
+    transform 0.12s ease;
+}
+.ob-btn:active { transform: scale(0.985); }
+.ob-btn--primary { background: #fafaf7; color: #101010; }
+.ob-btn--ghost { background: rgba(255, 255, 255, 0.12); color: #fafaf7; }
+.ob-btn--dim { background: rgba(255, 255, 255, 0.16); color: rgba(250, 250, 247, 0.45); }
+
+.ob-card { border-radius: 14px; background: rgba(255, 255, 255, 0.12); }
+.ob-link { color: #a5b4fc; font-weight: 700; }
+
+.ob-caret {
+  display: inline-block;
+  width: 2px;
+  height: 20px;
+  margin-left: 3px;
+  background: #c4b5fd;
+  animation: caret-blink 1.1s steps(1) infinite;
+}
+.ob-caret--box { height: 22px; margin-left: 0; }
+@keyframes caret-blink {
+  0%, 45%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* The in-app keypad under the phone and code steps. */
+.ob-keypad {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 7px;
+  padding: 8px 7px 0;
+}
+.ob-key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fafaf7;
+  transition: background 0.15s ease;
+}
+.ob-key:active { background: rgba(255, 255, 255, 0.28); }
+.ob-key--bare { background: transparent; }
+.ob-key--bare:active { background: rgba(255, 255, 255, 0.1); }
+.ob-key__digit { font-size: 23px; font-weight: 500; line-height: 1; }
+.ob-key__letters {
+  min-height: 12px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  line-height: 1.3;
+  color: rgba(250, 250, 247, 0.6);
+}
+
+/* Six code boxes; the live one wears a ring and the caret. */
+.ob-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 54px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 22px;
+  font-weight: 700;
+}
+.ob-box.is-live { box-shadow: inset 0 0 0 1.5px #a78bfa; }
+
+/* Country picker rises over the phone step like a native sheet. */
+.ob-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: #0b0b0d;
+  transition:
+    transform 0.42s cubic-bezier(0.32, 0.72, 0.3, 1),
+    opacity 0.3s ease;
+}
+.ob-picker.is-closed {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The wrong-code sheet: scrim fades, card springs up from the bottom. */
+.ob-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  transition: opacity 0.3s ease;
+}
+.ob-sheet.is-hidden { opacity: 0; pointer-events: none; }
+.ob-sheet__scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); }
+.ob-sheet__card {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 30px 20px 20px;
+  border-radius: 30px;
+  background: #161618;
+  transition: transform 0.38s cubic-bezier(0.32, 0.72, 0.3, 1);
+}
+.ob-sheet.is-hidden .ob-sheet__card { transform: translateY(115%); }
 
 /* --------------------------------------------------------------- theme toggle
    A hairline pill. The knob carries a sun; flipping slides it across while
@@ -375,8 +615,13 @@ html.theme-transition *:not(.theme-toggle, .theme-toggle *)::after {
 .theme-toggle.is-dark .theme-toggle__bite { opacity: 1; transform: translate(3.6px, -3.6px) scale(1.25); }
 
 @media (prefers-reduced-motion: reduce) {
-  .gem, .gem__gleam, .gem__shadow, .toast-in, .stage-in { animation: none; }
-  .join-hero, .join-title, .join-tagline, .gem,
+  .gem, .gem__gleam, .gem__shadow, .toast-in, .stage-in,
+  .gemfx--twinkle, .gemfx--arc, .gemfx--beam, .ob-caret {
+    animation: none;
+  }
+  .gem,
+  .ob-splash, .ob-splash__glow, .ob-splash__mark,
+  .ob-picker, .ob-sheet, .ob-sheet__card, .ob-btn, .ob-dot,
   .theme-toggle__knob, .theme-toggle__rays, .theme-toggle__sun, .theme-toggle__bite {
     transition: none;
   }
