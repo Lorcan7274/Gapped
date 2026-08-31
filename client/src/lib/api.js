@@ -1,3 +1,21 @@
+// The storage keys were renamed gap.* → gapped.* along with the app. Carry
+// old values across before anything reads them: for a legacy anonymous
+// account the stored id is the only credential there is, so dropping it
+// would delete the account outright.
+try {
+  for (const key of ['player', 'token', 'theme', 'country']) {
+    const value = localStorage.getItem(`gap.${key}`)
+    if (value != null) {
+      if (localStorage.getItem(`gapped.${key}`) == null) {
+        localStorage.setItem(`gapped.${key}`, value)
+      }
+      localStorage.removeItem(`gap.${key}`)
+    }
+  }
+} catch {
+  /* storage blocked: nothing stored, nothing to migrate */
+}
+
 const PLAYER_KEY = 'gapped.player'
 const TOKEN_KEY = 'gapped.token'
 

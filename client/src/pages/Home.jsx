@@ -142,7 +142,15 @@ export default function Home() {
             Searching · tap to cancel
           </Button>
         ) : (
-          <Button onClick={() => joinQueue(selected.key)}>
+          <Button
+            onClick={() => {
+              // send() returns false on a closed socket; silence here would
+              // leave the runner tapping a button that does nothing.
+              if (!joinQueue(selected.key)) {
+                setNotice({ tone: 'bad', text: 'Not connected. Try again in a moment.' })
+              }
+            }}
+          >
             <span className="size-2 rounded-full bg-indigo" />
             Find duel
           </Button>
