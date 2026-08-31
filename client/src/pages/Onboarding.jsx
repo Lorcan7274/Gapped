@@ -149,6 +149,20 @@ export default function Onboarding() {
     triedRef.current = ''
   }
 
+  /**
+   * Resend from the code step. This step has no inline error line, so a
+   * failed send (textbee down, network gone) rises as the sheet — except a
+   * 429, whose retryInSeconds restarts the visible countdown and says it all.
+   */
+  async function resend() {
+    triedRef.current = ''
+    const err = await request()
+    if (err && !err.retryInSeconds) {
+      setSheet({ title: 'Could not send the code', body: err.message })
+      setSheetOpen(true)
+    }
+  }
+
   function backToNumber() {
     setSheetOpen(false)
     triedRef.current = ''
@@ -181,7 +195,11 @@ export default function Onboarding() {
 
   /* ------------------------------------------------------------- your name */
 
-  const collapsedName = displayName.replace(/\s+/g, ' ').trim()
+  // Strip control characters (a paste can carry them) before the same
+  // collapse the server applies — it rejects them as name_required, which
+  // this screen has no way to show, so they must never be sent.
+  // eslint-disable-next-line no-control-regex
+  const collapsedName = displayName.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim()
   const nameReady = collapsedName.length >= 2 && collapsedName.length <= 24
   const initials = (collapsedName.slice(0, 2) || 'GA').toUpperCase()
 
@@ -448,7 +466,7 @@ export default function Onboarding() {
             ) : resendIn > 0 ? (
               <>Resend code in <span className="nums">{resendClock}</span></>
             ) : (
-              <button type="button" onClick={request} className="ob-link">
+              <button type="button" onClick={resend} className="ob-link">
                 Resend code
               </button>
             )}

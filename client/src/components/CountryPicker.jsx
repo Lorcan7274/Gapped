@@ -3,7 +3,11 @@ import { COUNTRIES, flagUrl } from '../lib/countries.js'
 
 /** A little round flag; the bare ISO code fills in if the image fails. */
 export function FlagDisc({ code, size = 30 }) {
-  const [broken, setBroken] = useState(false)
+  // Remember which country failed, not that one failed: the phone step keeps
+  // one disc mounted across picks, and a single bad load (offline moment)
+  // must not stick every later country with the text fallback.
+  const [brokenFor, setBrokenFor] = useState(null)
+  const broken = brokenFor === code
   return (
     <span
       className="flex flex-none items-center justify-center overflow-hidden rounded-full bg-white/10"
@@ -16,7 +20,7 @@ export function FlagDisc({ code, size = 30 }) {
           src={flagUrl(code)}
           srcSet={`${flagUrl(code, 80)} 2x`}
           alt=""
-          onError={() => setBroken(true)}
+          onError={() => setBrokenFor(code)}
           className="h-full w-full object-cover"
         />
       )}

@@ -17,7 +17,10 @@ const EXAMPLE = { 1: '347 261 5518', 353: '87 123 4567', 44: '7911 123456' }
 export default function PhoneField({
   country, onCountry, national, onNational, size = 'lg', autoFocus = false,
 }) {
-  const [flagBroken, setFlagBroken] = useState(false)
+  // Keyed by country so one failed load does not stick every later pick
+  // with the text fallback (same latch as CountryPicker's FlagDisc).
+  const [flagBrokenFor, setFlagBrokenFor] = useState(null)
+  const flagBroken = flagBrokenFor === country
   const s = SIZES[size] ?? SIZES.lg
   const dial = DIAL[country] ?? ''
 
@@ -45,7 +48,7 @@ export default function PhoneField({
             width={28}
             height={20}
             alt=""
-            onError={() => setFlagBroken(true)}
+            onError={() => setFlagBrokenFor(country)}
             className="h-5 w-7 rounded-[2px] object-cover"
           />
         )}
