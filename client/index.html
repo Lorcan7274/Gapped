@@ -19,8 +19,11 @@
     <title>Gapped</title>
     <script>
       // Apply a saved dark theme before first paint so a reload never flashes light.
+      // This runs before any module, so the gap.* → gapped.* key migration in
+      // api.js has not happened yet — read the old key as a fallback here.
       try {
-        if (localStorage.getItem('gapped.theme') === 'dark') {
+        var theme = localStorage.getItem('gapped.theme') || localStorage.getItem('gap.theme')
+        if (theme === 'dark') {
           document.documentElement.dataset.theme = 'dark'
           document.documentElement.style.colorScheme = 'dark'
           document.querySelector('meta[name="theme-color"]').content = '#121211'
