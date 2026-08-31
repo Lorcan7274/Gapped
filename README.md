@@ -8,6 +8,12 @@ a duel each phone shows one number the size of your palm: the gap in metres
 between you and your opponent, green when you lead and garnet when you trail.
 Win and your rating climbs. That is the whole game.
 
+<p align="center">
+  <img src="docs/screens/battle.png" width="30%" alt="A live duel: the gap in metres, updating as you run" />
+  <img src="docs/screens/home.png" width="30%" alt="Home: rating, tier, nemesis, and a duel to pick" />
+  <img src="docs/screens/join-dark.png" width="30%" alt="The welcome screen in the dark theme" />
+</p>
+
 ## What it does
 
 - **Join with a phone number.** Pick your country, type your number, and a
