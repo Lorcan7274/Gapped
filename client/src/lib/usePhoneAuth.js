@@ -40,6 +40,12 @@ export function usePhoneAuth() {
       setNowMs(Date.now())
     } catch (err) {
       setError(err.message)
+      // Asked too soon: fold the server's cooldown into the resend timer so
+      // the button counts down to when a retry will actually work.
+      if (err.retryInSeconds) {
+        setResendAt(Date.now() + err.retryInSeconds * 1000)
+        setNowMs(Date.now())
+      }
     } finally {
       setBusy(false)
     }
