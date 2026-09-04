@@ -28,7 +28,9 @@ import {
   normaliseDistance, normaliseDuration, normaliseCoords,
   normaliseFormat, QUICK_FORMATS,
 } from '../lib/validate.js'
-import { DISCOVERY_RADIUS_M, DISCOVERY_RATING_SPREAD, PRESENCE_TTL_MS } from '../config.js'
+import {
+  DISCOVERY_RADIUS_M, DISCOVERY_RATING_SPREAD, PRESENCE_TTL_MS, QUEUE_TTL_MS,
+} from '../config.js'
 import { db } from '../db/index.js'
 import { resolveSession } from '../db/sessions.js'
 
@@ -226,6 +228,44 @@ export function createHub(log) {
       distanceM: challenge.distance_m,
       durationMs: challenge.duration_ms ?? null,
     })
+  }
+
+  /**
+   * Try to pair one queued runner with the longest-waiting runner who fits:
+   * same format, both located, inside the discovery radius and rating
+   * spread. Returns the match, or null when nobody fits yet.
+   *
+   * Run on every join and again from the sweeper, because whether two
+   * runners fit is not fixed at join time — a near miss on distance turns
+   * into a match by someone moving, not by them tapping the button again.
+   */
+  function tryPair(playerId) {
+    const entry = matchQueue.get(playerId)
+    const me = entry ? getPlayer(playerId) : null
+    if (!me || me.lat == null || me.lng == null) return null
+
+    // Map iteration is insertion order, so the first fit has waited longest.
+    for (const [candidateId, other] of matchQueue) {
+      if (candidateId === playerId || other.format !== entry.format) continue
+      const them = getPlayer(candidateId)
+      if (!them || !isOnline(candidateId) || hasLiveMatch(candidateId)) {
+        matchQueue.delete(candidateId) // stale entry; sweep it as we pass
+        continue
+      }
+      if (them.lat == null || them.lng == null) continue
+      if (Math.abs(them.rating - me.rating) > DISCOVERY_RATING_SPREAD) continue
+      if (distanceMetres(me.lat, me.lng, them.lat, them.lng) > DISCOVERY_RADIUS_M) continue
+
+      const format = QUICK_FORMATS[entry.format]
+      return beginMatch({
+        aId: candidateId,
+        bId: playerId,
+        mode: format.mode,
+        distanceM: format.distanceM ?? 0,
+        durationMs: format.durationMs ?? null,
+      })
+    }
+    return null
   }
 
   /** Time is up on a timed duel: more metres wins, equal metres is a draw. */
@@ -427,8 +467,6 @@ export function createHub(log) {
      */
     [CLIENT.QUEUE_JOIN](ctx) {
       const { socket, playerId, msg } = ctx
-      const key = normaliseFormat(msg.format)
-      if (!key) return fail(socket, 'Pick a duel format.', msg.id)
 
       // A refused join also answers QUEUE_LEFT: none of these paths can
       // coexist with a queue entry, so the socket that asked converges on
@@ -438,6 +476,9 @@ export function createHub(log) {
         fail(socket, message, msg.id)
         send(socket, SERVER.QUEUE_LEFT, { id: msg.id ?? null })
       }
+
+      const key = normaliseFormat(msg.format)
+      if (!key) return refuse('Pick a duel format.')
       if (hasLiveMatch(playerId)) return refuse('You are already in a race.')
 
       const me = getPlayer(playerId)
@@ -446,36 +487,15 @@ export function createHub(log) {
         return refuse('Share your location to get matched.')
       }
 
-      // Map iteration is insertion order, so the first fit has waited longest.
-      for (const [candidateId, entry] of matchQueue) {
-        if (candidateId === playerId || entry.format !== key) continue
-        const them = getPlayer(candidateId)
-        if (!them || !isOnline(candidateId) || hasLiveMatch(candidateId)) {
-          matchQueue.delete(candidateId) // stale entry; sweep it as we pass
-          continue
-        }
-        if (them.lat == null || them.lng == null) continue
-        if (Math.abs(them.rating - me.rating) > DISCOVERY_RATING_SPREAD) continue
-        if (distanceMetres(me.lat, me.lng, them.lat, them.lng) > DISCOVERY_RADIUS_M) continue
-
-        const format = QUICK_FORMATS[key]
-        beginMatch({
-          aId: candidateId,
-          bId: playerId,
-          mode: format.mode,
-          distanceM: format.distanceM ?? 0,
-          durationMs: format.durationMs ?? null,
-        })
-        return
-      }
-
-      // Nobody fits yet: wait. Rejoining only retunes the format — Map.set
-      // on an existing key keeps your place in line. The queue is keyed per
-      // player, not per socket, so every device this runner has open is told:
-      // otherwise a second tab keeps offering "Find duel" for a search that
-      // is already running, and closing the tab that queued looks like a
-      // cancel it never was.
+      // Take a place in line before looking for a partner, so tryPair reads
+      // one queue rather than a queue plus a special case for the joiner.
+      // Rejoining only retunes the format — Map.set on an existing key keeps
+      // your place. The queue is keyed per player, not per socket, so every
+      // device this runner has open is told: otherwise a second tab keeps
+      // offering "Find duel" for a search that is already running, and
+      // closing the tab that queued looks like a cancel it never was.
       matchQueue.set(playerId, { format: key, joinedAt: Date.now() })
+      if (tryPair(playerId)) return
       sendTo(playerId, SERVER.QUEUE_JOINED, { id: msg.id ?? null, format: key })
     },
 
@@ -624,7 +644,9 @@ export function createHub(log) {
   heartbeat.unref()
 
   // Sweep challenges nobody answered, and tell both phones — otherwise the
-  // challenger's "challenge sent" bar sits there until they cancel it.
+  // challenger's "challenge sent" bar sits there until they cancel it. Then
+  // do the same for quick-match searches, which have their own two ways of
+  // going stale.
   const sweeper = setInterval(() => {
     const expired = expireChallenges()
     for (const challenge of expired) {
@@ -632,6 +654,26 @@ export function createHub(log) {
       sendTo(challenge.to_id, SERVER.CHALLENGE_EXPIRED, { challengeId: challenge.id })
     }
     if (expired.length > 0) log.debug({ expired: expired.length }, 'expired stale challenges')
+
+    // Queueing is a claim to be ready right now, and a phone that has been
+    // in a pocket since it was tapped is not — so an old search is dropped
+    // rather than left to yank someone into a countdown. Say so: the spinner
+    // going quiet on its own is indistinguishable from nobody being around.
+    const cutoff = Date.now() - QUEUE_TTL_MS
+    for (const [playerId, entry] of matchQueue) {
+      if (entry.joinedAt > cutoff) continue
+      matchQueue.delete(playerId)
+      sendTo(playerId, SERVER.ERROR, {
+        message: 'Search timed out. Tap Find duel to start again.',
+        id: null,
+      })
+      sendTo(playerId, SERVER.QUEUE_LEFT, { id: null })
+    }
+
+    // Retry the ones still waiting. Two runners who were too far apart when
+    // they queued fit each other once one of them moves, and nothing about
+    // moving sends a queue:join.
+    for (const playerId of [...matchQueue.keys()]) tryPair(playerId)
   }, 15_000)
   sweeper.unref()
 

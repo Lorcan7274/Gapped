@@ -20,6 +20,11 @@ export function FlagDisc({ code, size = 30 }) {
           src={flagUrl(code)}
           srcSet={`${flagUrl(code, 80)} 2x`}
           alt=""
+          // The sheet keeps every country mounted so it can slide, and there
+          // are 200-odd of them: eager flags would be 200-odd requests fired
+          // the moment the phone step renders, for a list nobody has opened.
+          loading="lazy"
+          decoding="async"
           onError={() => setBrokenFor(code)}
           className="h-full w-full object-cover"
         />

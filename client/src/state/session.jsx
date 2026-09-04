@@ -141,10 +141,13 @@ export function SessionProvider({ children }) {
           setMatch(null)
           recoverResult(current)
         }
-        // A search does not survive our socket dropping server-side, so a
-        // reconnecting phone that was still searching quietly rejoins.
-        if (queuedRef.current && !(live && live.status === 'live')) {
-          socketRef.current?.send('queue:join', { format: queuedRef.current })
+        // A search does not survive our socket dropping server-side. A
+        // phone that was still searching quietly rejoins — unless it came
+        // back into a duel, which means the search already found one and
+        // the match:start that said so never arrived.
+        if (queuedRef.current) {
+          if (live && live.status === 'live') setQueued(null)
+          else socketRef.current?.send('queue:join', { format: queuedRef.current })
         }
         break
       }

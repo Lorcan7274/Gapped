@@ -15,9 +15,9 @@ const insert = db.prepare(`
   INSERT INTO auth_codes (id, phone, code_hash, created_at, expires_at)
   VALUES (?, ?, ?, ?, ?)
 `)
-const latestPending = db.prepare(`
+const latestIssued = db.prepare(`
   SELECT * FROM auth_codes
-  WHERE phone = ? AND consumed_at IS NULL
+  WHERE phone = ?
   ORDER BY created_at DESC LIMIT 1
 `)
 const livePending = db.prepare(`
@@ -41,7 +41,10 @@ const purge = db.prepare('DELETE FROM auth_codes WHERE expires_at < ?')
 export function issueCode(phone) {
   const ts = now()
 
-  const last = latestPending.get(phone)
+  // The last code texted, consumed or not: the cooldown is about how
+  // recently this number was messaged, and a completed sign-in retires codes
+  // without un-sending the text it just sent.
+  const last = latestIssued.get(phone)
   if (last && ts - last.created_at < RESEND_COOLDOWN_MS) {
     return {
       ok: false,

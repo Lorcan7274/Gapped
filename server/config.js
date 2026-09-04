@@ -29,6 +29,11 @@ export const SESSION_TTL_MS = int(process.env.SESSION_TTL_DAYS, 30) * 86_400_000
 export const AUTH_CODE_TTL_MS = int(process.env.AUTH_CODE_TTL_SECONDS, 300) * 1000
 export const CHALLENGE_TTL_MS = int(process.env.CHALLENGE_TTL_SECONDS, 60) * 1000
 
+// How long a quick-match search stays live. Queueing is a claim to be ready
+// right now, and a phone that went into a pocket a quarter of an hour ago is
+// not — so the search is dropped rather than yanking someone into a duel.
+export const QUEUE_TTL_MS = int(process.env.QUEUE_TTL_MINUTES, 15) * 60_000
+
 // textbee (textbee.dev) delivers verification codes through an Android phone
 // paired with the account. With no key set, codes are only logged — and
 // echoed in the request-code response outside production (see below).

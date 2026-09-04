@@ -57,5 +57,3 @@ export function normaliseFormat(input) {
     ? input
     : null
 }
-
-
