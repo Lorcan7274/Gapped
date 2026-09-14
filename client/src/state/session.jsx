@@ -3,8 +3,14 @@ import {
 } from 'react'
 import { api, readPlayer, writePlayer, readToken, writeToken } from '../lib/api.js'
 import { createSocket } from '../lib/socket.js'
+import { createCall, getCallMedia } from '../lib/call.js'
 
 const SessionContext = createContext(null)
+
+// An unanswered call stops ringing after this long.
+const CALL_RING_MS = 30_000
+
+const stopTracks = (stream) => stream?.getTracks().forEach((track) => track.stop())
 
 export function SessionProvider({ children }) {
   const [player, setPlayer] = useState(readPlayer)
@@ -23,8 +29,17 @@ export function SessionProvider({ children }) {
   const [result, setResult] = useState(null)
   const [opponentProgress, setOpponentProgress] = useState(0)
   const [opponentFinished, setOpponentFinished] = useState(false)
+  /**
+   * The in-duel video call: null, or
+   * { status: 'outgoing' | 'incoming' | 'connecting' | 'live', from, hasCamera,
+   *   camera, muted, remoteCamera, remoteStream }.
+   */
+  const [call, setCall] = useState(null)
 
   const socketRef = useRef(null)
+  /** The RTCPeerConnection wrapper and our camera/mic, owned outside React state. */
+  const rtcRef = useRef(null)
+  const localStreamRef = useRef(null)
   const [token, setToken] = useState(readToken)
   const playerId = player?.id ?? null
 
@@ -34,6 +49,8 @@ export function SessionProvider({ children }) {
   const incomingRef = useRef(null)
   const outgoingRef = useRef(null)
   const queuedRef = useRef(null)
+  const callRef = useRef(null)
+  useEffect(() => { callRef.current = call }, [call])
   useEffect(() => { matchRef.current = match }, [match])
   useEffect(() => { incomingRef.current = incoming }, [incoming])
   useEffect(() => { outgoingRef.current = outgoing }, [outgoing])
@@ -111,9 +128,43 @@ export function SessionProvider({ children }) {
     }
   }, [])
 
+  /** Hang up locally: close the connection and switch the camera light off. */
+  const teardownCall = useCallback(() => {
+    rtcRef.current?.stop()
+    rtcRef.current = null
+    stopTracks(localStreamRef.current)
+    localStreamRef.current = null
+    setCall(null)
+  }, [])
+
+  const openCall = useCallback((m, stream, polite) => {
+    const signal = (payload) => socketRef.current?.send('call:signal', { matchId: m.id, ...payload })
+    rtcRef.current = createCall({
+      iceServers: m.iceServers,
+      polite,
+      localStream: stream,
+      sendSignal: signal,
+      onRemoteStream: (remoteStream) => setCall((c) => c && { ...c, remoteStream }),
+      onState: (state) => {
+        if (state === 'connected') setCall((c) => c && { ...c, status: 'live' })
+        if (state === 'failed') {
+          socketRef.current?.send('call:end', { matchId: m.id })
+          teardownCall()
+          setNotice({ tone: 'bad', text: 'The call could not connect.' })
+        }
+      },
+    })
+    signal({ camera: stream.getVideoTracks().length > 0 })
+  }, [teardownCall])
+
   const onMessage = useCallback((frame) => {
+    // Call frames for a duel this phone is no longer showing are stale.
+    if (frame.type.startsWith('call:') && frame.matchId !== matchRef.current?.id) return
+
     switch (frame.type) {
       case 'ready': {
+        // The server drops a call when our socket does, so ours is over too.
+        if (callRef.current) teardownCall()
         setPlayer((prev) => {
           const next = { ...prev, ...frame.player }
           writePlayer(next)
@@ -132,6 +183,7 @@ export function SessionProvider({ children }) {
             setMatch({
               id: live.matchId, mode: live.mode, distanceM: live.distanceM,
               durationMs: live.durationMs, startsAt: live.startsAt, opponent: live.opponent,
+              iceServers: live.iceServers,
               // Metres the server already has for us — a reload restarts the
               // GPS trail at zero, so the battle screen resumes from here.
               resumeProgressM: live.progress?.[frame.player?.id] ?? 0,
@@ -197,6 +249,7 @@ export function SessionProvider({ children }) {
         setMatch({
           id: frame.matchId, mode: frame.mode, distanceM: frame.distanceM,
           durationMs: frame.durationMs, startsAt: frame.startsAt, opponent: frame.opponent,
+          iceServers: frame.iceServers,
         })
         break
       case 'match:tick':
@@ -216,10 +269,50 @@ export function SessionProvider({ children }) {
           opponent: frame.opponent,
         })
         break
+      case 'call:incoming':
+        // Crossed calls: ours lost the race, so let go of the media held for it.
+        stopTracks(localStreamRef.current)
+        localStreamRef.current = null
+        setCall({
+          status: 'incoming', from: frame.from, hasCamera: false,
+          camera: false, muted: false, remoteCamera: true, remoteStream: null,
+        })
+        break
+      case 'call:accepted': {
+        const stream = localStreamRef.current
+        if (callRef.current?.status !== 'outgoing' || !stream) {
+          socketRef.current?.send('call:end', { matchId: frame.matchId })
+          break
+        }
+        setCall((c) => c && { ...c, status: 'connecting' })
+        openCall(matchRef.current, stream, false)
+        break
+      }
+      case 'call:signal':
+        if (typeof frame.camera === 'boolean') {
+          setCall((c) => c && { ...c, remoteCamera: frame.camera })
+        }
+        if (frame.description || frame.candidate) rtcRef.current?.handleSignal(frame)
+        break
+      case 'call:declined':
+        teardownCall()
+        setNotice({ tone: 'bad', text: `${frame.by?.displayName ?? 'They'} declined the call.` })
+        break
+      case 'call:ended': {
+        const was = callRef.current
+        teardownCall()
+        const text = {
+          hangup: was?.status === 'incoming' ? 'Missed call.' : 'Call ended.',
+          disconnected: 'Call dropped.',
+          unavailable: 'They cannot take a call right now.',
+        }[frame.reason]
+        if (was && text) setNotice({ tone: 'bad', text })
+        break
+      }
       default:
         break
     }
-  }, [recoverResult])
+  }, [recoverResult, teardownCall, openCall])
 
   useEffect(() => {
     if (!playerId || status !== 'ready') return
@@ -252,7 +345,99 @@ export function SessionProvider({ children }) {
     return () => clearTimeout(timer)
   }, [outgoing])
 
+  // A call belongs to one duel. Whenever the duel changes or ends, hang up.
+  useEffect(() => teardownCall, [match?.id, teardownCall])
+
   /* ---------------------------------------------------------------- actions */
+
+  /** Ring the opponent. Asks for camera and mic first, on the tap. */
+  const startCall = useCallback(async () => {
+    const m = matchRef.current
+    if (!m || callRef.current) return
+    setCall({
+      status: 'outgoing', from: null, hasCamera: false,
+      camera: false, muted: false, remoteCamera: true, remoteStream: null,
+    })
+    let stream
+    try {
+      stream = await getCallMedia()
+    } catch {
+      setCall(null)
+      setNotice({ tone: 'bad', text: 'Allow the microphone to call.' })
+      return
+    }
+    // Cancelled, crossed or the duel ended while the permission prompt was up.
+    if (callRef.current?.status !== 'outgoing' || matchRef.current?.id !== m.id) {
+      stopTracks(stream)
+      return
+    }
+    localStreamRef.current = stream
+    const hasCamera = stream.getVideoTracks().length > 0
+    setCall((c) => c && { ...c, hasCamera, camera: hasCamera })
+    send('call:invite', { matchId: m.id })
+  }, [send])
+
+  const acceptCall = useCallback(async () => {
+    const m = matchRef.current
+    if (!m || callRef.current?.status !== 'incoming') return
+    setCall((c) => c && { ...c, status: 'connecting' })
+    let stream
+    try {
+      stream = await getCallMedia()
+    } catch {
+      send('call:decline', { matchId: m.id })
+      setCall(null)
+      setNotice({ tone: 'bad', text: 'Allow the microphone to answer.' })
+      return
+    }
+    if (callRef.current?.status !== 'connecting' || matchRef.current?.id !== m.id) {
+      stopTracks(stream)
+      return
+    }
+    localStreamRef.current = stream
+    const hasCamera = stream.getVideoTracks().length > 0
+    setCall((c) => c && { ...c, hasCamera, camera: hasCamera })
+    // Accept before signalling: the server relays nothing until it has.
+    send('call:accept', { matchId: m.id })
+    openCall(m, stream, true)
+  }, [send, openCall])
+
+  const declineCall = useCallback(() => {
+    const m = matchRef.current
+    if (m) send('call:decline', { matchId: m.id })
+    setCall(null)
+  }, [send])
+
+  const endCall = useCallback(() => {
+    const m = matchRef.current
+    if (m) send('call:end', { matchId: m.id })
+    teardownCall()
+  }, [send, teardownCall])
+
+  const toggleCamera = useCallback(() => {
+    const track = localStreamRef.current?.getVideoTracks()[0]
+    const m = matchRef.current
+    if (!track || !m) return
+    track.enabled = !track.enabled
+    setCall((c) => c && { ...c, camera: track.enabled })
+    send('call:signal', { matchId: m.id, camera: track.enabled })
+  }, [send])
+
+  const toggleMute = useCallback(() => {
+    const tracks = localStreamRef.current?.getAudioTracks() ?? []
+    const muted = !callRef.current?.muted
+    for (const track of tracks) track.enabled = !muted
+    setCall((c) => c && { ...c, muted })
+  }, [])
+
+  useEffect(() => {
+    if (call?.status !== 'outgoing') return
+    const timer = setTimeout(() => {
+      endCall()
+      setNotice({ tone: 'bad', text: 'No answer.' })
+    }, CALL_RING_MS)
+    return () => clearTimeout(timer)
+  }, [call?.status, endCall])
 
   const adopt = useCallback((nextToken, nextPlayer) => {
     writeToken(nextToken)
@@ -323,13 +508,15 @@ export function SessionProvider({ children }) {
     player, players, meta, status, connection, notice,
     incoming, outgoing, match, result, opponentProgress, opponentFinished,
     queued, joinQueue, leaveQueue,
+    call, startCall, acceptCall, declineCall, endCall, toggleCamera, toggleMute,
     requestPhoneCode, verifyPhone, leave, pushLocation, send,
     setNotice, setOutgoing, setIncoming,
     clearResult: () => setResult(null),
   }), [
     player, players, meta, status, connection, notice, incoming, outgoing,
     match, result, opponentProgress, opponentFinished, queued, joinQueue,
-    leaveQueue, requestPhoneCode, verifyPhone, leave, pushLocation, send,
+    leaveQueue, call, startCall, acceptCall, declineCall, endCall, toggleCamera,
+    toggleMute, requestPhoneCode, verifyPhone, leave, pushLocation, send,
   ])
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

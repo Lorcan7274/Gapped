@@ -29,6 +29,26 @@ export const SESSION_TTL_MS = int(process.env.SESSION_TTL_DAYS, 30) * 86_400_000
 export const AUTH_CODE_TTL_MS = int(process.env.AUTH_CODE_TTL_SECONDS, 300) * 1000
 export const CHALLENGE_TTL_MS = int(process.env.CHALLENGE_TTL_SECONDS, 60) * 1000
 
+// Where an in-duel video call looks for a route between the two phones. STUN
+// is enough on most Wi-Fi, but carrier networks often hide phones behind NATs
+// that refuse a direct path, and only a TURN relay (Metered, Twilio, a
+// self-hosted coturn) gets those calls through. TURN entries carry
+// credentials, so this only ever goes out in authenticated socket frames.
+export const ICE_SERVERS = (() => {
+  const raw = process.env.ICE_SERVERS_JSON
+  if (!raw) return [{ urls: 'stun:stun.l.google.com:19302' }]
+  let parsed = null
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    /* reported below */
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error('ICE_SERVERS_JSON must be a JSON array of RTCIceServer objects')
+  }
+  return parsed
+})()
+
 // textbee (textbee.dev) delivers verification codes through an Android phone
 // paired with the account. With no key set, codes are only logged — and
 // echoed in the request-code response outside production (see below).

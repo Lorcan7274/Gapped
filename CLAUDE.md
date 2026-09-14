@@ -44,6 +44,8 @@ A session token from phone sign-in (`Authorization: Bearer`, or `?token=` on the
 
 Two modes throughout challenge → match → result: `'race'` (first to a distance, `distance_m`) and `'timed'` (most metres before the clock, `duration_ms`). Any mode-sensitive code must handle both. Server-side rules the client must not be trusted with: progress is monotonic and capped (finish line for races, max-plausible-speed for timed), timed duels settle themselves via a server deadline timer (plus a grace for the final progress frame), a disconnected runner gets a 45 s forfeit grace, and `reconcileOnBoot` abandons matches left `live` by a dead process without settling ratings.
 
+Runners in a live duel can video call each other (`call:*` frames, `lib/call.js`, `components/CallPanel.jsx`). Media is peer-to-peer WebRTC; the hub only relays signalling between the two runners of that match, keeps the call state on the match runtime, and ends the call when the match settles or a runner drops. ICE servers come from `ICE_SERVERS_JSON` and are sent only in authenticated socket frames; calls over mobile data need a TURN entry there.
+
 ### Client (`client/src/`)
 
 React 19 + Vite + Tailwind v4. No router: `App.jsx` switches four tabs from local state, and a live match takes over the whole screen. All shared state lives in `state/session.jsx` — the `SessionProvider` owns the socket, handles every server frame, and exposes actions via `useSession()`; pages and components never touch the socket directly. Player + token persist in localStorage. The server's `ready` frame is the reconciliation point: it restores the battle screen after a reload (with `resumeProgressM`, since the GPS trail restarts at zero) or fetches a missed result from match history.

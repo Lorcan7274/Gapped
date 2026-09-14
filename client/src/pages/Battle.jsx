@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { createTracker } from '../lib/tracker.js'
 import { Label } from '../components/ui.jsx'
+import { CallButton, CallStrip, CallVideo, CallControls } from '../components/CallPanel.jsx'
 
 const REPORT_INTERVAL_MS = 2000
 const HOLD_TO_END_MS = 1200
@@ -207,14 +208,17 @@ export default function Battle() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-paper px-6 safe-t safe-b">
-      <header className="border-b border-rule pb-4">
+      <header className="flex items-center justify-between border-b border-rule pb-4">
         <span className="label text-ink">
           Versus {match.opponent?.displayName ?? 'Opponent'}
         </span>
+        <CallButton />
       </header>
+      <CallStrip />
 
       {/* The gap. Everything else on this screen defers to it. */}
-      <div className="flex flex-1 flex-col items-center justify-center">
+      <div className="relative flex flex-1 flex-col items-center justify-center">
+        <CallVideo />
         <p
           className={`display display-tight text-[112px] ${
             ahead ? 'text-ink' : 'text-garnet'
@@ -258,6 +262,7 @@ export default function Battle() {
             <p className="display mt-1.5 text-[32px]">{Math.round(mine)} m</p>
           </div>
         </div>
+        <CallControls />
         {phase === 'done' ? (
           <p className="py-4 text-center text-[15px] text-slate">
             {timed ? 'Time. Waiting on the result…' : 'Finished. Waiting on the result…'}

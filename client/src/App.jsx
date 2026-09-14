@@ -44,6 +44,18 @@ export default function App() {
     return (
       <>
         <Battle />
+        {/* Call news (declined, dropped) has to reach a runner mid-duel too. */}
+        {notice && (
+          <div className="pointer-events-none fixed inset-x-0 top-20 z-50 mx-auto max-w-[430px] px-6">
+            <p
+              className={`toast-in border border-rule bg-paper px-5 py-3.5 text-center text-[13px] ${
+                notice.tone === 'good' ? 'text-indigo' : 'text-garnet'
+              }`}
+            >
+              {notice.text}
+            </p>
+          </div>
+        )}
         <ResultSheet />
       </>
     )

@@ -28,7 +28,9 @@ import {
   normaliseDistance, normaliseDuration, normaliseCoords,
   normaliseFormat, QUICK_FORMATS,
 } from '../lib/validate.js'
-import { DISCOVERY_RADIUS_M, DISCOVERY_RATING_SPREAD, PRESENCE_TTL_MS } from '../config.js'
+import {
+  DISCOVERY_RADIUS_M, DISCOVERY_RATING_SPREAD, PRESENCE_TTL_MS, ICE_SERVERS,
+} from '../config.js'
 import { db } from '../db/index.js'
 import { resolveSession } from '../db/sessions.js'
 
@@ -44,11 +46,18 @@ const TIMED_SETTLE_GRACE_MS = 3_000
 // Nobody covers ground faster than the GPS filter allows; anything past this
 // in a timed duel is a made-up number.
 const MAX_PLAUSIBLE_SPEED_MPS = 12
+// Call signalling is SDP and ICE candidates — a few kilobytes at most. The cap
+// keeps the duel socket from being used as a general-purpose pipe.
+const MAX_SIGNAL_BYTES = 16_000
 
 export function createHub(log) {
   /** playerId -> Set<WebSocket> — a player may have the app open twice. */
   const sockets = new Map()
-  /** matchId -> { forfeitTimers: Map<playerId, Timeout>, deadlineTimer } */
+  /**
+   * matchId -> { forfeitTimers: Map<playerId, Timeout>, deadlineTimer, call }
+   * `call` is the in-duel video call, if any: { from, state: 'ringing' | 'connected' }.
+   * The media flows peer to peer; the hub only decides who may signal whom.
+   */
   const liveMatches = new Map()
   /**
    * playerId -> { format, joinedAt } — runners waiting for a quick match.
@@ -152,6 +161,7 @@ export function createHub(log) {
       startsAt: match.started_at + COUNTDOWN_MS,
       opponent: publicPlayer(getPlayer(opponentOf(match, playerId))),
       progress: { [match.a_id]: match.a_progress_m, [match.b_id]: match.b_progress_m },
+      iceServers: ICE_SERVERS,
     }
   }
 
@@ -181,7 +191,7 @@ export function createHub(log) {
       bRating: b.rating,
     })
 
-    const runtime = { forfeitTimers: new Map(), deadlineTimer: null }
+    const runtime = { forfeitTimers: new Map(), deadlineTimer: null, call: null }
     liveMatches.set(match.id, runtime)
 
     // A timed duel ends itself: when the clock runs out, whoever covered
@@ -207,6 +217,7 @@ export function createHub(log) {
         countdownMs: COUNTDOWN_MS,
         you: publicPlayer(self),
         opponent: publicPlayer(other),
+        iceServers: ICE_SERVERS,
       })
     }
 
@@ -253,6 +264,11 @@ export function createHub(log) {
     }
 
     const { match } = settled
+    if (runtime?.call) {
+      for (const playerId of [match.a_id, match.b_id]) {
+        sendTo(playerId, SERVER.CALL_ENDED, { matchId, reason: 'match_over' })
+      }
+    }
     for (const playerId of [match.a_id, match.b_id]) {
       const self = getPlayer(playerId)
       const other = getPlayer(opponentOf(match, playerId))
@@ -301,6 +317,18 @@ export function createHub(log) {
       clearTimeout(timer)
       runtime.forfeitTimers.delete(playerId)
     }
+  }
+
+  /**
+   * A call only ever connects the two runners of one live duel. Returns the
+   * match, its runtime and the other runner, or null for anyone else.
+   */
+  function callPeer({ playerId, msg }) {
+    const match = getMatch(String(msg.matchId ?? ''))
+    if (!match || match.status !== 'live' || !sideOf(match, playerId)) return null
+    const runtime = liveMatches.get(match.id)
+    if (!runtime) return null
+    return { match, runtime, opponentId: opponentOf(match, playerId) }
   }
 
   /* ------------------------------------------------------------- handlers */
@@ -556,6 +584,73 @@ export function createHub(log) {
       if (!sideOf(match, ctx.playerId)) return
       endMatch(match.id, opponentOf(match, ctx.playerId), 'forfeit')
     },
+
+    [CLIENT.CALL_INVITE](ctx) {
+      const peer = callPeer(ctx)
+      if (!peer) return
+      const { match, runtime, opponentId } = peer
+      const call = runtime.call
+      // Both tapped call at once: theirs is already ringing, so this runner
+      // gets that one to answer rather than a refusal.
+      if (call?.state === 'ringing' && call.from === opponentId) {
+        return send(ctx.socket, SERVER.CALL_INCOMING, {
+          matchId: match.id, from: publicPlayer(getPlayer(opponentId)),
+        })
+      }
+      if (call || !isOnline(opponentId)) {
+        return send(ctx.socket, SERVER.CALL_ENDED, { matchId: match.id, reason: 'unavailable' })
+      }
+      runtime.call = { from: ctx.playerId, state: 'ringing' }
+      sendTo(opponentId, SERVER.CALL_INCOMING, {
+        matchId: match.id, from: publicPlayer(getPlayer(ctx.playerId)),
+      })
+    },
+
+    [CLIENT.CALL_ACCEPT](ctx) {
+      const peer = callPeer(ctx)
+      if (!peer) return
+      const { match, runtime, opponentId } = peer
+      const call = runtime.call
+      if (call?.state !== 'ringing' || call.from !== opponentId) {
+        return send(ctx.socket, SERVER.CALL_ENDED, { matchId: match.id, reason: 'unavailable' })
+      }
+      call.state = 'connected'
+      // The caller makes the WebRTC offer once it hears this.
+      sendTo(opponentId, SERVER.CALL_ACCEPTED, { matchId: match.id })
+    },
+
+    [CLIENT.CALL_DECLINE](ctx) {
+      const peer = callPeer(ctx)
+      if (!peer) return
+      const { match, runtime, opponentId } = peer
+      const call = runtime.call
+      if (call?.state !== 'ringing' || call.from !== opponentId) return
+      runtime.call = null
+      sendTo(opponentId, SERVER.CALL_DECLINED, {
+        matchId: match.id, by: publicPlayer(getPlayer(ctx.playerId)),
+      })
+    },
+
+    [CLIENT.CALL_SIGNAL](ctx) {
+      const peer = callPeer(ctx)
+      if (peer?.runtime.call?.state !== 'connected') return
+      if (JSON.stringify(ctx.msg).length > MAX_SIGNAL_BYTES) return
+      const { description, candidate, camera } = ctx.msg
+      // Only the fields a call needs go through; anything else is dropped.
+      sendTo(peer.opponentId, SERVER.CALL_SIGNAL, {
+        matchId: peer.match.id,
+        description: description ?? undefined,
+        candidate: candidate ?? undefined,
+        camera: typeof camera === 'boolean' ? camera : undefined,
+      })
+    },
+
+    [CLIENT.CALL_END](ctx) {
+      const peer = callPeer(ctx)
+      if (!peer?.runtime.call) return
+      peer.runtime.call = null
+      sendTo(peer.opponentId, SERVER.CALL_ENDED, { matchId: peer.match.id, reason: 'hangup' })
+    },
   }
 
   /* ------------------------------------------------------------ lifecycle */
@@ -604,7 +699,18 @@ export function createHub(log) {
       matchQueue.delete(playerId)
       broadcastPlayers()
       const current = getLiveMatchFor(playerId)
-      if (current) armForfeit(current, playerId)
+      if (current) {
+        armForfeit(current, playerId)
+        // A call does not survive its runner dropping off; they can ring
+        // again once reconnected.
+        const runtime = liveMatches.get(current.id)
+        if (runtime?.call) {
+          runtime.call = null
+          sendTo(opponentOf(current, playerId), SERVER.CALL_ENDED, {
+            matchId: current.id, reason: 'disconnected',
+          })
+        }
+      }
     })
 
     socket.on('error', (error) => log.warn({ error, playerId }, 'socket error'))

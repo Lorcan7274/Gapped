@@ -12,6 +12,11 @@ export const CLIENT = {
   MATCH_PROGRESS: 'match:progress',
   MATCH_FINISH: 'match:finish',
   MATCH_FORFEIT: 'match:forfeit',
+  CALL_INVITE: 'call:invite',
+  CALL_ACCEPT: 'call:accept',
+  CALL_DECLINE: 'call:decline',
+  CALL_SIGNAL: 'call:signal',
+  CALL_END: 'call:end',
 }
 
 export const SERVER = {
@@ -30,6 +35,11 @@ export const SERVER = {
   MATCH_END: 'match:end',
   PRESENCE: 'presence',
   PLAYERS: 'players',
+  CALL_INCOMING: 'call:incoming',
+  CALL_ACCEPTED: 'call:accepted',
+  CALL_DECLINED: 'call:declined',
+  CALL_SIGNAL: 'call:signal',
+  CALL_ENDED: 'call:ended',
 }
 
 export function encode(type, payload = {}) {
