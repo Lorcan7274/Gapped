@@ -8,6 +8,7 @@ import { APPLIED_MIGRATIONS } from './db/index.js'
 import { purgeExpired } from './auth/index.js'
 import { buildApp } from './app.js'
 import { createHub } from './ws/hub.js'
+import { startSundayJob } from './jobs/sunday.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const clientDist = path.join(here, '..', 'client', 'dist')
@@ -79,8 +80,12 @@ app.server.on('upgrade', (request, socket, head) => {
 const housekeeping = setInterval(purgeExpired, 3_600_000)
 housekeeping.unref()
 
+// Sunday night settles every duel still open; checked every minute.
+const stopSunday = startSundayJob(app.log)
+
 async function shutdown(signal) {
   clearInterval(housekeeping)
+  stopSunday()
   app.log.info({ signal }, 'shutting down')
   hub.close()
   await app.close()

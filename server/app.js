@@ -4,6 +4,7 @@ import { registerAuth, playerIdForRequest } from './auth/index.js'
 import { normaliseDisplayName } from './lib/validate.js'
 import meRoutes, { describeSelf } from './routes/me.js'
 import runRoutes from './routes/runs.js'
+import duelRoutes from './routes/duels.js'
 
 /**
  * The HTTP API, without listening or serving the client — so tests can
@@ -40,5 +41,6 @@ export async function buildApp(options = {}) {
   })
   await app.register(meRoutes)
   await app.register(runRoutes)
+  await app.register(duelRoutes)
   return app
 }

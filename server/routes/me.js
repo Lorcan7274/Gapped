@@ -4,7 +4,7 @@ import { renamePlayer } from '../db/players.js'
 import { weekPoints } from '../db/runs.js'
 import { weekOf } from '../lib/economy.js'
 import { TIERS } from '../lib/ladder.js'
-import { LADDER } from '../config/game.js'
+import { LADDER, DUEL } from '../config/game.js'
 
 /** The signed-in player's own record, with this week's points. */
 export function describeSelf(row) {
@@ -33,6 +33,7 @@ export default async function meRoutes(app) {
   app.get('/api/meta', async () => ({
     tiers: TIERS.map(({ key, name, colour }) => ({ key, name, colour })),
     divisionsPerTier: LADDER.divisionsPerTier,
+    duel: { fuelCost: DUEL.fuelCost, minDistanceM: DUEL.minDistanceM },
     // Shapes a live friend duel can take.
     live: { distances: DISTANCES, durationsMinutes: DURATION_MINUTES },
   }))

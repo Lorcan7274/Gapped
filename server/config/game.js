@@ -197,3 +197,26 @@ export const STREAK = Object.freeze({
   bonusPerDay: 0.02,
   maxBonusDays: 6,
 })
+
+/**
+ * Ghost duels: racing a recording of someone's run for pool points. The
+ * challenger pays Fuel up front; the reply is free. The engine that decides
+ * them is lib/rating.js (RATING, DUEL_POINTS above).
+ */
+export const DUEL = Object.freeze({
+  // Fuel to start a duel: about one and a half solid runs' worth.
+  fuelCost: 10,
+  // Runs shorter than this are not offered as ghosts.
+  minDistanceM: 1000,
+  // A leg's track may stop just short of the line — the phone stops on its
+  // own filtered distance, which can differ from the server's by a hair.
+  // Within this many metres, the finish time is extrapolated at the pace
+  // held over the last `finishPaceWindowM`.
+  finishToleranceM: 20,
+  finishPaceWindowM: 200,
+  // A leg's run must start after the leg was started, give or take clock skew.
+  startSlackMs: 120_000,
+  // How far back the feed of challengeable runs reaches, and how long it is.
+  feedDays: 7,
+  feedLimit: 50,
+})

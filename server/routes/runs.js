@@ -1,28 +1,57 @@
-import { parseTrack, summariseTrack, encodeTrack, TrackError } from '../lib/track.js'
+import { parseTrack, summariseTrack, walkTrack, encodeTrack, decodeTrack, TrackError } from '../lib/track.js'
 import {
   localDay, weekOf, intensity, nextStreak, soloRewards, countsForStreak,
 } from '../lib/economy.js'
+import { timeToCover } from '../lib/ghost.js'
 import { serializeRun } from '../lib/serialize.js'
+import { DUEL } from '../config/game.js'
 import { getPlayer } from '../db/players.js'
 import { findRunByStart, earnedOn, recordRun, recentRuns } from '../db/runs.js'
+import { getDuel, recordLeg, settle, DuelError } from '../db/duels.js'
 import { describeSelf } from './me.js'
+import { describeDuel } from './duels.js'
 
 // A two-hour run at one fix a second is ~0.5 MB of JSON; leave room.
 const RUN_BODY_LIMIT = 8 * 1024 * 1024
 
+/**
+ * Which leg of which duel an uploaded run is, or null if it is not one —
+ * the duel has settled (Sunday passed, or the leg was walked away from), or
+ * the run started before the leg did. A run that cannot be a leg is still
+ * a run: it is stored and paid as solo.
+ */
+function legFor(duelId, playerId, startedAt) {
+  if (!duelId) return null
+  const duel = settle(String(duelId)) // closes it first if its Sunday has passed
+  if (!duel) return null
+  const leg =
+    duel.challenger_id === playerId && duel.status === 'leg1' && !duel.leg1_quit ? 1
+    : duel.target_id === playerId && duel.status === 'leg2' ? 2
+    : null
+  if (!leg) return null
+  const legStart = leg === 1 ? duel.leg1_started_at : duel.leg2_started_at
+  if (startedAt < legStart - DUEL.startSlackMs) return null
+  return { duel, leg }
+}
+
 export default async function runRoutes(app) {
   /**
-   * Upload a finished solo run. The phone sends the raw fixes it saw; the
-   * server recomputes distance and time from them, checks plausibility, and
-   * pays out Shards, Fuel and a few pool points. Solo never costs anything:
-   * a flagged run is stored and settles unranked — it pays nothing and is
-   * marked for review — but it takes nothing away either. The phone retries
-   * uploads, so the same run twice returns the first.
+   * Upload a finished run. The phone sends the raw fixes it saw; the server
+   * recomputes distance and time from them, checks plausibility, and pays
+   * out Shards, Fuel and streak. A solo run also pays a few pool points; a
+   * duel leg (`duelId`) pays its points when the duel settles instead.
+   *
+   * Solo never costs anything: a flagged run is stored and settles unranked
+   * — it pays nothing and is marked for review — but it takes nothing away
+   * either. A flagged duel leg voids the duel. The phone retries uploads, so
+   * the same run twice returns the first.
    */
   app.post('/api/runs', { preHandler: app.requirePlayer, bodyLimit: RUN_BODY_LIMIT }, async (request, reply) => {
     let points
     try {
-      points = parseTrack(request.body?.track, { now: Date.now() })
+      // Measured at storage precision, so a replay of the stored track
+      // (a ghost, a review) reproduces exactly the numbers settled on.
+      points = decodeTrack(encodeTrack(parseTrack(request.body?.track, { now: Date.now() })))
     } catch (error) {
       if (error instanceof TrackError) return reply.code(400).send({ error: error.message, code: error.code })
       throw error
@@ -32,10 +61,17 @@ export default async function runRoutes(app) {
 
     const existing = findRunByStart(playerId, summary.startedAt)
     if (existing) {
-      return { run: serializeRun(existing), player: describeSelf(getPlayer(playerId)), duplicate: true }
+      const duel = getDuel(request.body?.duelId)
+      return {
+        run: serializeRun(existing),
+        player: describeSelf(getPlayer(playerId)),
+        duel: duel && [duel.challenger_id, duel.target_id].includes(playerId) ? describeDuel(duel, playerId) : null,
+        duplicate: true,
+      }
     }
 
     const player = getPlayer(playerId)
+    const leg = legFor(request.body?.duelId, playerId, summary.startedAt)
     const day = localDay(summary.startedAt)
     const minutes = summary.elapsedMs / 60_000
     const quarantined = summary.flags.length > 0
@@ -45,12 +81,13 @@ export default async function runRoutes(app) {
     const rewards = quarantined
       ? { shards: 0, fuel: 0, points: 0 }
       : soloRewards({ minutes, intensity: effort, streakDays: streak.days, today: earnedOn(playerId, day) })
+    const { profile } = walkTrack(points)
 
-    const run = recordRun({
+    const runInput = {
       run: {
         player_id: playerId,
-        kind: 'solo',
-        private: request.body?.private ? 1 : 0,
+        kind: leg ? 'duel' : 'solo',
+        private: !leg && request.body?.private ? 1 : 0,
         started_at: summary.startedAt,
         ended_at: summary.endedAt,
         day,
@@ -62,14 +99,39 @@ export default async function runRoutes(app) {
         intensity: effort,
         shards: rewards.shards,
         fuel: rewards.fuel,
-        points: rewards.points,
+        // A leg's points come from the duel.
+        points: leg ? 0 : rewards.points,
+        ghost_ms: summary.distanceM > 0 ? timeToCover(profile, summary.distanceM) : null,
       },
       track: { format: 1, samples: points.length, hasSteps: summary.hasSteps, data: encodeTrack(points) },
       credit: { metres: quarantined ? 0 : summary.distanceM, streak },
-    })
+    }
+
+    let run
+    let duel = null
+    if (leg) {
+      // A leg is timed to the duel's distance. One that stops short is a
+      // quit, and so is one the runner ended on purpose before the line.
+      const reached = profile.at(-1)?.[1] ?? 0
+      const ms = request.body?.quit && reached < leg.duel.distance_m
+        ? null
+        : timeToCover(profile, leg.duel.distance_m)
+      try {
+        ;({ run, duel } = recordLeg({ duelId: leg.duel.id, leg: leg.leg, ms, quarantined, runInput }))
+      } catch (error) {
+        if (!(error instanceof DuelError)) throw error
+      }
+    }
+    if (!run) run = recordRun({ ...runInput, run: { ...runInput.run, kind: 'solo', points: rewards.points } })
     if (quarantined) request.log.warn({ runId: run.id, playerId, flags: summary.flags }, 'run quarantined')
 
-    return reply.code(201).send({ run: serializeRun(run), player: describeSelf(getPlayer(playerId)) })
+    return reply.code(201).send({
+      run: serializeRun(run),
+      player: describeSelf(getPlayer(playerId)),
+      duel: duel ? describeDuel(duel, playerId) : null,
+      // Asked to be a leg but could not be: the run counted as solo.
+      ...(request.body?.duelId && !duel ? { duelClosed: true } : {}),
+    })
   })
 
   app.get('/api/me/runs', { preHandler: app.requirePlayer }, async (request) => ({

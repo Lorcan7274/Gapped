@@ -9,7 +9,7 @@ import { newId } from '../lib/ids.js'
 
 const RUN_COLUMNS = `
   id, player_id, kind, private, started_at, ended_at, day, week, distance_m,
-  elapsed_ms, status, flags, intensity, shards, fuel, points, created_at
+  elapsed_ms, status, flags, intensity, shards, fuel, points, ghost_ms, created_at
 `
 
 const selectRun = db.prepare(`SELECT ${RUN_COLUMNS} FROM runs WHERE id = ?`)
@@ -22,8 +22,9 @@ const selectRecent = db.prepare(
 const selectEarned = db.prepare(`
   SELECT COALESCE(SUM(shards), 0) AS shards, COALESCE(SUM(fuel), 0) AS fuel,
          COALESCE(SUM(points), 0) AS points
-  FROM runs WHERE player_id = ? AND day = ? AND kind = 'solo'
+  FROM runs WHERE player_id = ? AND day = ?
 `)
+const selectTrack = db.prepare('SELECT format, data FROM run_tracks WHERE run_id = ?')
 const selectWeekPoints = db.prepare(
   'SELECT COALESCE(SUM(points), 0) AS points FROM point_events WHERE player_id = ? AND week = ?'
 )
@@ -31,7 +32,7 @@ const selectWeekPoints = db.prepare(
 const insertRun = db.prepare(`
   INSERT INTO runs (${RUN_COLUMNS})
   VALUES (@id, @player_id, @kind, @private, @started_at, @ended_at, @day, @week, @distance_m,
-          @elapsed_ms, @status, @flags, @intensity, @shards, @fuel, @points, @created_at)
+          @elapsed_ms, @status, @flags, @intensity, @shards, @fuel, @points, @ghost_ms, @created_at)
 `)
 const insertTrack = db.prepare(
   'INSERT INTO run_tracks (run_id, format, samples, has_steps, data) VALUES (?, ?, ?, ?, ?)'
@@ -59,8 +60,11 @@ export const getRun = (id) => selectRun.get(id) ?? null
 export const findRunByStart = (playerId, startedAt) => selectByStart.get(playerId, startedAt) ?? null
 export const recentRuns = (playerId, limit = 30) => selectRecent.all(playerId, limit)
 
-/** Shards, Fuel and points a player's solo runs have already earned on a day, for the caps. */
+/** Shards, Fuel and points a player's runs have already earned on a day, for the caps. */
 export const earnedOn = (playerId, day) => selectEarned.get(playerId, day)
+
+/** A run's stored track (lib/track.js encodeTrack), or null. */
+export const getTrackData = (runId) => selectTrack.get(runId)?.data ?? null
 
 export const weekPoints = (playerId, week) => selectWeekPoints.get(playerId, week).points
 
@@ -74,7 +78,7 @@ export const weekPoints = (playerId, week) => selectWeekPoints.get(playerId, wee
 export const recordRun = db.transaction(({ run, track, credit }) => {
   const id = newId()
   const ts = now()
-  insertRun.run({ ...run, id, created_at: ts, flags: run.flags ?? null })
+  insertRun.run({ ...run, id, created_at: ts, flags: run.flags ?? null, ghost_ms: run.ghost_ms ?? null })
   insertTrack.run(id, track.format, track.samples, track.hasSteps ? 1 : 0, track.data)
   if (run.points > 0) insertPoints.run(newId(), run.player_id, run.week, run.kind, id, run.points, ts)
   if (run.fuel > 0) insertFuel.run(newId(), run.player_id, run.fuel, 'run', id, ts)
