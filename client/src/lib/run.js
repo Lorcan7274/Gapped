@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { createTracker } from './tracker.js'
+import { createTracker, MAX_ACCURACY_M } from './tracker.js'
 import { api } from './api.js'
 import { ghostMetresAt } from './ghost.js'
 
@@ -201,6 +201,11 @@ export const run = {
     const pending = readPending()
     if (pending && state.phase === 'idle') return upload(pending)
     return null
+  },
+
+  /** Where this run has been, for the map: fixes good enough to draw, oldest first. */
+  path() {
+    return track.filter((f) => f.acc == null || f.acc <= MAX_ACCURACY_M)
   },
 
   /** Feed a synthetic fix (debug bench and tests), through the real path. */

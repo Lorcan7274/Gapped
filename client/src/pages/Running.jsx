@@ -4,8 +4,10 @@ import { useSession } from '../state/session.jsx'
 import { useWakeLock } from '../lib/wakeLock.js'
 import { clock, signedClock } from '../lib/format.js'
 import HoldToEnd from '../components/HoldToEnd.jsx'
+import RunMap from '../components/RunMap.jsx'
 import { Button, Label, Spinner } from '../components/ui.jsx'
 
+const averagePace = ({ elapsedMs, metres }) => (metres >= 50 ? (elapsedMs / metres) * 1000 : null)
 const paceClock = (msPerKm) => (msPerKm && Number.isFinite(msPerKm) ? clock(msPerKm) : '—:—')
 
 const GPS_TEXT = {
@@ -63,45 +65,7 @@ export default function Running() {
       : <RunResult result={state.result} />
   }
 
-  if (state.mode === 'duel') return <DuelLeg state={state} />
-
-  const km = (state.metres / 1000).toFixed(2)
-  return (
-    <Frame>
-      <header className="flex items-center justify-between border-b border-rule pb-4">
-        <span className="label text-ink">Solo run{state.private ? ' · private' : ''}</span>
-        <span className={`label ${state.gps === 'ok' ? 'text-muted' : 'text-garnet'}`}>
-          {state.gps === 'ok' ? 'GPS' : 'No GPS'}
-        </span>
-      </header>
-
-      <div className="flex flex-1 flex-col items-center justify-center">
-        <p className="display display-tight nums text-[112px]">{km}</p>
-        <p className="display text-[40px]">km</p>
-        {state.gps !== 'ok' && (
-          <p className="mt-6 max-w-[16rem] text-center text-[15px] text-garnet">{GPS_TEXT[state.gps]}</p>
-        )}
-      </div>
-
-      <div className="flex items-baseline justify-between border-t border-rule pt-4">
-        <Label>Time</Label>
-        <p className="display nums text-[64px]">{clock(state.elapsedMs)}</p>
-      </div>
-      <div className="border-t border-rule pt-4">
-        <div className="flex items-end justify-between pb-4">
-          <div>
-            <Label>Pace /km</Label>
-            <p className="display nums mt-1.5 text-[32px]">{paceClock(state.paceMsPerKm)}</p>
-          </div>
-          <div className="text-right">
-            <Label>GPS fixes</Label>
-            <p className="display nums mt-1.5 text-[32px]">{state.fixes}</p>
-          </div>
-        </div>
-        <HoldToEnd label="Hold to finish" onDone={() => run.finish()} />
-      </div>
-    </Frame>
-  )
+  return <Live state={state} />
 }
 
 function Frame({ children }) {
@@ -157,69 +121,6 @@ function Payout({ label, value, hint = null, plain = false, signed = false }) {
         {plain ? value : signed && value < 0 ? `−${Math.abs(value)}` : `+${value}`}
       </span>
     </div>
-  )
-}
-
-/**
- * Racing a ghost. The screen is the gap: how many metres ahead of (green) or
- * behind (garnet) the ghost you are, then how far to the line, then the
- * clock. Nothing else competes with it.
- */
-function DuelLeg({ state }) {
-  const { duel } = state
-  const started = state.elapsedMs > 0
-  const ahead = (state.gapM ?? 0) >= 0
-  const gap = Math.round(Math.abs(state.gapM ?? 0))
-  const toGo = Math.max(0, duel.distanceM - state.metres)
-  const name = duel.opponent?.displayName ?? 'them'
-
-  return (
-    <Frame>
-      <header className="flex items-center justify-between border-b border-rule pb-4">
-        <span className="label text-ink">{duel.leg === 1 ? `Duel · ${name}’s ghost` : `Reply · ${name}’s run`}</span>
-        <span className={`label ${state.gps === 'ok' ? 'text-muted' : 'text-garnet'}`}>
-          {state.gps === 'ok' ? 'GPS' : 'No GPS'}
-        </span>
-      </header>
-
-      <div className="flex flex-1 flex-col items-center justify-center">
-        {started ? (
-          <>
-            <p className={`display display-tight nums text-[112px] ${ahead ? 'text-win' : 'text-garnet'}`}>
-              {ahead ? '+' : '−'}{gap}
-            </p>
-            <p className={`display text-[32px] ${ahead ? 'text-win' : 'text-garnet'}`}>
-              m {ahead ? 'ahead' : 'behind'}
-            </p>
-          </>
-        ) : (
-          <p className="max-w-[16rem] text-center text-[17px] text-slate">
-            {state.gps === 'ok' || state.gps === 'waiting'
-              ? 'Waiting for a good GPS fix. The race starts the moment you have one.'
-              : GPS_TEXT[state.gps]}
-          </p>
-        )}
-      </div>
-
-      <div className="flex items-baseline justify-between border-t border-rule pt-4">
-        <Label>To go</Label>
-        <p className="display nums text-[48px]">{(toGo / 1000).toFixed(2)}<span className="text-[24px]"> km</span></p>
-      </div>
-      <div className="border-t border-rule pt-4">
-        <div className="flex items-end justify-between pb-4">
-          <div>
-            <Label>Time</Label>
-            <p className="display nums mt-1.5 text-[32px]">{clock(state.elapsedMs)}</p>
-          </div>
-          <div className="text-right">
-            <Label>Their time</Label>
-            <p className="display nums mt-1.5 text-[32px]">{clock(duel.ghostTimeMs)}</p>
-          </div>
-        </div>
-        <HoldToEnd label="Hold to quit" onDone={() => run.finish({ quit: true })} />
-        <p className="pt-2 text-center text-[13px] text-muted">Quitting counts as losing by the expected margin.</p>
-      </div>
-    </Frame>
   )
 }
 
@@ -321,5 +222,114 @@ export function DuelOutcome({ duel }) {
         )
       )}
     </>
+  )
+}
+
+/**
+ * A run in progress. The top of the screen is the map; the bottom must read
+ * at arm's length in sunlight. A duel leads with the gap to the ghost — who
+ * you are racing, then how far ahead (green) or behind (garnet) — a solo run
+ * with the distance. Time and pace are always there.
+ */
+function Live({ state }) {
+  const duel = state.mode === 'duel' ? state.duel : null
+  const started = duel ? state.elapsedMs > 0 : true
+  const gpsOk = state.gps === 'ok'
+
+  return (
+    <div className="flex min-h-dvh flex-col bg-paper">
+      <RunMap state={state} className="h-[44dvh] shrink-0" />
+
+      <div className="flex flex-1 flex-col px-6 safe-b">
+        <div className="flex min-h-[52px] items-center justify-between gap-4 border-b border-rule">
+          {duel ? (
+            <span className="flex min-w-0 items-center gap-2.5">
+              <span className="size-2.5 shrink-0 rounded-full bg-garnet/70" aria-hidden="true" />
+              <span className="truncate text-[15px] font-700">
+                {duel.leg === 1 ? 'Racing' : 'Replying to'} {duel.opponent?.displayName ?? 'your rival'}
+              </span>
+              {duel.opponent?.tier?.label && (
+                <span className="label shrink-0 text-muted">{duel.opponent.tier.label}</span>
+              )}
+            </span>
+          ) : (
+            <span className="label text-ink">Solo run{state.private ? ' · private' : ''}</span>
+          )}
+          <span className={`label shrink-0 ${gpsOk ? 'text-muted' : 'text-garnet'}`}>{gpsOk ? 'GPS' : 'No GPS'}</span>
+        </div>
+
+        <div className="flex flex-1 flex-col items-center justify-center py-4">
+          {!started ? (
+            <p className="max-w-[17rem] text-center text-[17px] text-slate">
+              {state.gps === 'ok' || state.gps === 'waiting'
+                ? 'Waiting for a good GPS fix. The race starts the moment you have one.'
+                : GPS_TEXT[state.gps]}
+            </p>
+          ) : duel ? (
+            <Gap gapM={state.gapM} name={duel.opponent?.displayName} />
+          ) : (
+            <>
+              <p className="display display-tight nums text-[96px]">{(state.metres / 1000).toFixed(2)}</p>
+              <p className="label mt-1 text-muted">Kilometres</p>
+            </>
+          )}
+          {started && !gpsOk && <p className="mt-4 text-center text-[13px] text-garnet">{GPS_TEXT[state.gps]}</p>}
+        </div>
+
+        <div className="grid grid-cols-3 border-y border-rule">
+          {duel ? (
+            <>
+              <Cell label="To go" value={`${(Math.max(0, duel.distanceM - state.metres) / 1000).toFixed(2)}`} unit="km" />
+              <Cell label="Time" value={clock(state.elapsedMs)} align="center" divided />
+            </>
+          ) : (
+            <>
+              <Cell label="Time" value={clock(state.elapsedMs)} />
+              <Cell label="Avg pace" value={paceClock(averagePace(state))} unit="/km" align="center" divided />
+            </>
+          )}
+          <Cell label="Pace" value={paceClock(state.paceMsPerKm)} unit="/km" align="right" divided />
+        </div>
+
+        <div className="flex justify-center py-4">
+          <HoldToEnd
+            variant="primary"
+            className="max-w-[16rem]"
+            label={duel ? 'Hold to quit' : 'Hold to finish'}
+            onDone={() => run.finish({ quit: Boolean(duel) })}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** The gap: ink numeral, the sign and unit in the colour of the lead. */
+function Gap({ gapM, name }) {
+  const ahead = (gapM ?? 0) >= 0
+  const tone = ahead ? 'text-win' : 'text-garnet'
+  return (
+    <>
+      <p className="display display-tight nums flex items-baseline text-[104px]">
+        <span className={tone}>{ahead ? '+' : '−'}</span>
+        {Math.round(Math.abs(gapM ?? 0))}
+        <span className={`ml-2 text-[48px] ${tone}`}>m</span>
+      </p>
+      <p className={`label mt-1 ${tone}`}>{ahead ? 'Ahead of' : 'Behind'} {name ?? 'the ghost'}</p>
+    </>
+  )
+}
+
+const ALIGN = { left: 'items-start text-left', center: 'items-center text-center', right: 'items-end text-right' }
+
+function Cell({ label, value, unit, align = 'left', divided = false }) {
+  return (
+    <div className={`flex flex-col gap-1 py-3 ${ALIGN[align]} ${divided ? 'border-l border-rule' : ''}`}>
+      <Label>{label}</Label>
+      <p className="display nums text-[26px] leading-none">
+        {value}
+        {unit && <span className="ml-1 text-[13px] font-700 text-muted">{unit}</span>}
+      </p>
+    </div>
   )
 }

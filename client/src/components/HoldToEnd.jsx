@@ -6,7 +6,7 @@ const HOLD_MS = 1200
  * Ending a run must survive sweaty thumbs and a bouncing screen, so it is a
  * real press-and-hold: nothing happens until the bar fills.
  */
-export default function HoldToEnd({ onDone, label = 'Hold to end' }) {
+export default function HoldToEnd({ onDone, label = 'Hold to end', variant = 'outline', className = '' }) {
   const [pct, setPct] = useState(0)
   const timerRef = useRef(null)
 
@@ -37,11 +37,11 @@ export default function HoldToEnd({ onDone, label = 'Hold to end' }) {
       onPointerCancel={stop}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onDone()}
       onContextMenu={(e) => e.preventDefault()}
-      className="btn btn-outline relative select-none overflow-hidden touch-none"
+      className={`btn btn-${variant} relative select-none overflow-hidden touch-none ${className}`}
     >
       <span
         aria-hidden="true"
-        className="absolute inset-y-0 left-0 bg-garnet/20 transition-none"
+        className={`absolute inset-y-0 left-0 transition-none ${variant === 'primary' ? 'bg-garnet/70' : 'bg-garnet/20'}`}
         style={{ width: `${pct}%` }}
       />
       <span className="relative">{label}</span>
