@@ -37,7 +37,9 @@ export const RATING = Object.freeze({
   // How far one duel can move a rating: kEstablished at most, once a player
   // has `provisionalResults` in-app results; kProvisional for the very first,
   // decaying linearly in between.
-  kEstablished: 30,
+  // 20 rather than 30: in simulation it holds error lowest over a year and
+  // leaves the least inflation for re-anchoring to take back out.
+  kEstablished: 20,
   kProvisional: 120,
   provisionalResults: 5,
 
@@ -58,9 +60,10 @@ export const RATING = Object.freeze({
    *  'efforts'  — only the two duel efforts (challenger's run vs the
    *               target's reply), leaving out the ghost, which may have been
    *               an easy solo run the challenger picked for being slow.
-   * Points always follow the visible combined margin either way.
+   * Points always follow the visible combined margin either way. 'efforts':
+   * in simulation, 'combined' let easy solo ghosts swamp the signal.
    */
-  evidence: 'combined',
+  evidence: 'efforts',
 
   // A quit leg counts as finished at the expected losing margin: the
   // quitter's expected time (or the time they were racing, whichever is
@@ -95,19 +98,24 @@ export const DUEL_POINTS = Object.freeze({
   walkoverSteal: 10,
 })
 
-/** Seasons: every `lengthWeeks`, hidden ratings are squashed toward the middle. */
+/**
+ * Seasons: every `lengthWeeks` the hidden scale is reset. A rating is a pace,
+ * so squashing ratings toward the middle makes them wrong — in simulation
+ * even 0.9 doubled the error — and does nothing about inflation. The reset
+ * re-anchors the scale to measured pace instead; the squash stays available.
+ */
 export const SEASON = Object.freeze({
   lengthWeeks: 9,
-  // new = centre + (old - centre) * squash
-  squash: 0.8,
+  // new = centre + (old - centre) * squash; 1 leaves the spread alone.
+  squash: 1,
   // After a reset each player counts as this many results short of
   // established (never below zero), so K is briefly higher while ratings
   // find their level again.
-  provisionalBoost: 2,
+  provisionalBoost: 0,
   // Re-anchoring: at each reset, shift every rating by the season's measured
   // pace drift (see paceDrift in lib/rating.js) so the scale keeps meaning
-  // real paces. Off here, pending review of the simulation results.
-  reanchor: false,
+  // real paces.
+  reanchor: true,
   // Fewer real duel efforts than this in a season and no shift is made.
   reanchorMinEfforts: 200,
   // The most one reset may shift the scale, in rating points.

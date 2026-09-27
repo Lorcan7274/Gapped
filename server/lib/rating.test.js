@@ -407,11 +407,12 @@ describe('quits, walkovers and withdrawals', () => {
 
 describe('evidence modes', () => {
   const efforts = { ...RATING, evidence: 'efforts' }
+  const combinedMode = { ...RATING, evidence: 'combined' }
 
   test('an easy ghost run drains the target in combined mode but not in efforts mode', () => {
     // Both duel efforts exactly as predicted; the ghost was a jog 15% off pace.
     const d = duel({ rc: 1000, rt: 1000, g: T(1000) * 1.15 })
-    const combined = settleDuel(d)
+    const combined = settleDuel(d, combinedMode)
     const fair = settleDuel(d, efforts)
     assert.equal(combined.outcome, 'challenger')
     assert.ok(combined.rating.target.delta < -5)
@@ -421,8 +422,8 @@ describe('evidence modes', () => {
 
   test('points follow the visible combined margin in both modes', () => {
     for (const d of randomDuels(500, 31)) {
-      assert.deepEqual(settleDuel(d).points, settleDuel(d, efforts).points)
-      assert.equal(settleDuel(d).outcome, settleDuel(d, efforts).outcome)
+      assert.deepEqual(settleDuel(d, combinedMode).points, settleDuel(d, efforts).points)
+      assert.equal(settleDuel(d, combinedMode).outcome, settleDuel(d, efforts).outcome)
     }
   })
 
@@ -478,14 +479,15 @@ describe('seasons', () => {
   })
 
   test('a reset squashes toward the centre and briefly speeds everyone up', () => {
-    const high = seasonReset({ rating: 1500, results: 40 }, { centre: 1000 })
-    close(high.rating, 1000 + 500 * SEASON.squash)
-    assert.equal(high.results, RATING.provisionalResults - SEASON.provisionalBoost)
+    const squashing = { ...SEASON, squash: 0.8, provisionalBoost: 2 }
+    const high = seasonReset({ rating: 1500, results: 40 }, { centre: 1000 }, squashing)
+    close(high.rating, 1000 + 500 * 0.8)
+    assert.equal(high.results, RATING.provisionalResults - 2)
     assert.ok(kFactor(high.results) > RATING.kEstablished)
-    const low = seasonReset({ rating: 600, results: 1 }, { centre: 1000 })
-    close(low.rating, 1000 - 400 * SEASON.squash)
+    const low = seasonReset({ rating: 600, results: 1 }, { centre: 1000 }, squashing)
+    close(low.rating, 1000 - 400 * 0.8)
     assert.equal(low.results, 1)
-    const centre = seasonReset({ rating: 1000, results: 9 }, { centre: 1000 })
+    const centre = seasonReset({ rating: 1000, results: 9 }, { centre: 1000 }, squashing)
     assert.equal(centre.rating, 1000)
   })
 

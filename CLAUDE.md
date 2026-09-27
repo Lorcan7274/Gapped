@@ -26,7 +26,7 @@ The rework runs in phases, each leaving the app runnable, each in small commits:
 | Phase | What | State |
 | --- | --- | --- |
 | 0 | Migrations, auth seam, production guard | **done** |
-| 1 | Hidden rating engine + simulation harness | **done — tuning awaiting review** |
+| 1 | Hidden rating engine + simulation harness | **done** |
 | 2 | Run modes, run recording/storage, Shards + Fuel + streak; most of the kill list | next |
 | 3 | Ghost replay in the tracker; duel flow (challenge → reply → Sunday settlement) | |
 | 4 | Pools, feed, points, weekly promote/relegate job, bounty | |
@@ -35,7 +35,7 @@ The rework runs in phases, each leaving the app runnable, each in small commits:
 
 **Still running but legacy — do not extend, only delete or refactor per the plan:** the stranger-matchmaking live duel stack (`ws/hub.js` presence/discovery/quick-match queue/stranger challenges, `db/matches.js`, `lib/elo.js` and its rating-based tiers, `routes/join.js` location + nearby, `routes/players.js` nearby/leaderboard, client `pages/Challenge.jsx` lobby, `components/LocationButton.jsx`, `lib/ranking.js`), the video call (`lib/call.js`, `components/CallPanel.jsx`, `call:*` frames, `ICE_SERVERS_JSON`), and the `players.rating/wins/losses/lat/lng` columns. The Home "Duel" sheet's *Random lobby* half is legacy too; that sheet becomes the Solo/Duel picker.
 
-**Tuning decisions pending review** (phase 1 simulation — run `npm run sim -- --compare` to see why): `RATING.evidence` 'combined' → 'efforts', `SEASON.squash` 0.8 → 1 (with `provisionalBoost` 0), `SEASON.reanchor` false → true, `RATING.kEstablished` 30 → 20. `config/game.js` still holds the spec-as-written values until they are approved. Do not wire the engine to real duels before that.
+**Tuning decided after the phase 1 simulation** (`npm run sim -- --compare` shows why): the hidden rating moves on the two duel efforts (`RATING.evidence: 'efforts'`), not the combined margin; seasons re-anchor the scale to measured pace (`SEASON.reanchor`) instead of squashing it (`squash: 1`); `RATING.kEstablished` is 20. Cherry-picking a soft ghost from the feed is worth ~12% more points per duel under the combined-margin points rule — accepted for now, to revisit with the points economy in phase 4. The in-run gap is green when leading, garnet when trailing.
 
 ## Kill list — never reintroduce
 
@@ -100,7 +100,7 @@ React 19 + Vite + Tailwind v4. No router: `App.jsx` switches tabs from local sta
 
 ### Design system ("Shard Mono")
 
-Swiss-minimal editorial: warm off-white paper, near-black ink, structure from 1px hairlines only — no cards, no grey fills, no shadows. Archivo, 900-weight numerals, uppercase 11–13px labels. Two brand colours: indigo `#4F46E5` (the accent) and garnet `#A43F5E` (the nemesis, and trailing in a duel — the in-run gap turns garnet when behind; it is ink when ahead today, and the rework spec asks for green when ahead, to settle in phase 3). Selection marks (radios, the active tab) are ink, not indigo. Primary actions are filled ink pills. Touch targets ≥ 56px. Units are metric everywhere. Match this before adding any new UI.
+Swiss-minimal editorial: warm off-white paper, near-black ink, structure from 1px hairlines only — no cards, no grey fills, no shadows. Archivo, 900-weight numerals, uppercase 11–13px labels. Two brand colours: indigo `#4F46E5` (the accent) and garnet `#A43F5E` (the nemesis, and trailing in a duel — the in-run gap is green (`--color-win`) when ahead and garnet when behind). Selection marks (radios, the active tab) are ink, not indigo. Primary actions are filled ink pills. Touch targets ≥ 56px. Units are metric everywhere. Match this before adding any new UI.
 
 Deliberate departures, all from the Claude Design handoff:
 
