@@ -81,7 +81,7 @@ function Stat({ label, value, divided = false, top = false }) {
 /** One run: when, how far, how long, and what it paid. */
 function RunRow({ run, divided }) {
   const quarantined = run.status === 'quarantined'
-  const tags = [run.kind === 'solo' ? 'Solo' : run.kind, run.private && 'private'].filter(Boolean)
+  const tags = [run.kind === 'duel' ? 'Duel leg' : 'Solo', run.private && 'private'].filter(Boolean)
   return (
     <li className={divided ? 'border-t border-rule' : ''}>
       <div className="flex min-h-[56px] items-center gap-3.5 py-[9px]">

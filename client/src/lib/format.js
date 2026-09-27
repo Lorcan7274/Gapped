@@ -19,6 +19,13 @@ export function clock(ms) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+/** A time difference with a true sign: +0:12, −1:03, ±0:00. */
+export function signedClock(ms) {
+  if (ms == null || !Number.isFinite(ms)) return '—:—'
+  const sign = Math.round(ms / 1000) === 0 ? '±' : ms > 0 ? '+' : '−'
+  return `${sign}${clock(Math.abs(ms))}`
+}
+
 export function preciseClock(ms) {
   if (ms == null || !Number.isFinite(ms)) return '—:—.—'
   const tenths = Math.floor((Math.max(0, ms) % 1000) / 100)

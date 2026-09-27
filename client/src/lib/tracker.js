@@ -44,6 +44,10 @@ export function createTracker({ onUpdate, onError, onFix } = {}) {
   let previous = null
   let total = 0
   let startedAt = null
+  // Times (from the fixes themselves) of the first and latest accepted fix:
+  // a ghost race is clocked from the first, exactly as the server times it.
+  let firstFixAt = null
+  let lastFixAt = null
   let accepted = 0
   let rejected = 0
   let rejectedAccuracy = 0
@@ -63,6 +67,8 @@ export function createTracker({ onUpdate, onError, onFix } = {}) {
       accuracy: lastAccuracy,
       lastRejection,
       elapsedMs: startedAt ? Date.now() - startedAt : 0,
+      firstFixAt,
+      lastFixAt,
       paceMsPerKm: paceMsPerKm(),
       running: watchId != null,
     })
@@ -117,6 +123,7 @@ export function createTracker({ onUpdate, onError, onFix } = {}) {
         // Jitter floor: keep the anchor where it is. The trail still gets a
         // point so the pace window sees time passing without movement.
         accepted += 1
+        lastFixAt = at
         lastRejection = null
         remember(at)
         emit()
@@ -125,6 +132,8 @@ export function createTracker({ onUpdate, onError, onFix } = {}) {
       total += step
     }
 
+    if (firstFixAt == null) firstFixAt = at
+    lastFixAt = at
     previous = point
     accepted += 1
     lastRejection = null
@@ -171,6 +180,8 @@ export function createTracker({ onUpdate, onError, onFix } = {}) {
       rejectedSpeed = 0
       lastAccuracy = null
       lastRejection = null
+      firstFixAt = null
+      lastFixAt = null
       trail = []
       startedAt = watchId != null ? Date.now() : null
       emit()

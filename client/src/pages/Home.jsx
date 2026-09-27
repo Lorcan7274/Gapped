@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { run } from '../lib/run.js'
+import { api } from '../lib/api.js'
+import Duels from './Duels.jsx'
 import Crystal from '../components/Crystal.jsx'
 import TierLadder from '../components/TierLadder.jsx'
 import { Button, Label } from '../components/ui.jsx'
@@ -25,6 +27,19 @@ export default function Home() {
   const { player } = useSession()
   const [ladderOpen, setLadderOpen] = useState(false)
   const [keepPrivate, setKeepPrivate] = useState(readPrivate)
+  const [duelsOpen, setDuelsOpen] = useState(false)
+  const [replies, setReplies] = useState([])
+
+  // Challenges waiting on you. No push yet, so look when the tab shows, and
+  // now and then while it stays open.
+  useEffect(() => {
+    if (!player?.id || duelsOpen) return
+    const look = () =>
+      api('/api/duels').then((d) => setReplies(d.duels.filter((x) => x.yourTurn))).catch(() => {})
+    look()
+    const timer = setInterval(look, 60_000)
+    return () => clearInterval(timer)
+  }, [player?.id, duelsOpen])
 
   if (!player) return null
   const tier = player.tier ?? { key: 'bronze', label: 'Bronze' }
@@ -60,6 +75,20 @@ export default function Home() {
         <Stat label="Streak" value={player.streak ? `${player.streak}d` : '—'} divided />
       </div>
 
+      {replies.length > 0 && (
+        <button
+          onClick={() => setDuelsOpen(true)}
+          className="flex min-h-[56px] w-full items-center justify-between gap-4 border-b border-rule text-left"
+        >
+          <span className="text-[15px]">
+            {replies.length === 1
+              ? `${replies[0].opponent?.displayName} challenged you`
+              : `${replies.length} challenges waiting on you`}
+          </span>
+          <span className="label text-garnet">Reply by Sunday</span>
+        </button>
+      )}
+
       <div className="mt-auto flex flex-col gap-2.5 py-3.5">
         <button
           type="button"
@@ -79,12 +108,14 @@ export default function Home() {
           </span>
         </button>
         <Button onClick={() => run.start({ private: keepPrivate })}>Start run</Button>
+        <Button variant="outline" onClick={() => setDuelsOpen(true)}>Duel</Button>
         <p className="text-center text-[13px] text-muted">
-          Every run pays Shards, Fuel and a few points. Solo never costs you anything.
+          A solo run always pays and never costs. A duel races someone’s ghost for points.
         </p>
       </div>
 
       {ladderOpen && <TierLadder onClose={() => setLadderOpen(false)} />}
+      {duelsOpen && <Duels onClose={() => setDuelsOpen(false)} />}
     </div>
   )
 }
