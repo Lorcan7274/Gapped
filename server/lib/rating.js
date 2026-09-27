@@ -332,26 +332,52 @@ export function settleDuel(duel, p = RATING, pts = DUEL_POINTS) {
 
 /* ----------------------------------------------------------------- seasons */
 
-/** The middle ratings are squashed toward: the median of the active players. */
-export function seasonCentre(ratings) {
-  if (!Array.isArray(ratings) || ratings.length === 0) {
-    throw new RangeError('seasonCentre needs at least one rating')
+function median(values, name) {
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new RangeError(`${name} needs at least one value`)
   }
-  const sorted = ratings.map((r, i) => finite(r, `ratings[${i}]`)).sort((a, b) => a - b)
+  const sorted = values.map((v, i) => finite(v, `${name}[${i}]`)).sort((a, b) => a - b)
   const mid = sorted.length >> 1
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
+/** The middle ratings are squashed toward: the median of the active players. */
+export const seasonCentre = (ratings) => median(ratings, 'ratings')
+
 /**
- * The seasonal soft reset: ratings squash toward the centre, and every
- * player briefly moves faster again while the ladder finds its level.
+ * How far the whole scale has drifted from real pace, in rating points. A
+ * rating is a pace, so every real duel effort is a measurement of it: this is
+ * the median, over a season's efforts, of how much faster each runner ran
+ * than their rating at the time predicted. Inflation shows up as runners
+ * running slower than their ratings say — a negative drift. Too few efforts
+ * to trust, and the answer is zero.
+ *
+ *   efforts  [{ rating, timeS, distanceM }] — real, completed duel legs only
  */
-export function seasonReset({ rating, results }, centre, season = SEASON, p = RATING) {
+export function paceDrift(efforts, season = SEASON, p = RATING) {
+  if (!Array.isArray(efforts)) throw new TypeError('efforts must be an array')
+  if (efforts.length < season.reanchorMinEfforts) return 0
+  const drift = median(
+    efforts.map((e) => performanceVsRating(e.rating, e.timeS, e.distanceM, p)),
+    'efforts'
+  )
+  return clamp(drift, -season.reanchorMaxShift, season.reanchorMaxShift)
+}
+
+/**
+ * The seasonal soft reset: ratings squash toward the centre, every player
+ * briefly moves faster again while the ladder finds its level, and — when
+ * `season.reanchor` is on — the whole scale shifts by the measured pace
+ * drift, so ratings keep meaning real paces.
+ */
+export function seasonReset({ rating, results }, { centre, drift = 0 }, season = SEASON, p = RATING) {
   finite(rating, 'rating')
   finite(centre, 'centre')
+  finite(drift, 'drift')
   resultsCount(results, 'results')
+  const shift = season.reanchor ? drift : 0
   return {
-    rating: clamp(centre + (rating - centre) * season.squash, p.minRating, p.maxRating),
+    rating: clamp(centre + (rating - centre) * season.squash + shift, p.minRating, p.maxRating),
     results: Math.max(0, Math.min(results, p.provisionalResults - season.provisionalBoost)),
   }
 }

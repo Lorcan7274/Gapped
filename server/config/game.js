@@ -104,4 +104,12 @@ export const SEASON = Object.freeze({
   // established (never below zero), so K is briefly higher while ratings
   // find their level again.
   provisionalBoost: 2,
+  // Re-anchoring: at each reset, shift every rating by the season's measured
+  // pace drift (see paceDrift in lib/rating.js) so the scale keeps meaning
+  // real paces. Off here, pending review of the simulation results.
+  reanchor: false,
+  // Fewer real duel efforts than this in a season and no shift is made.
+  reanchorMinEfforts: 200,
+  // The most one reset may shift the scale, in rating points.
+  reanchorMaxShift: 100,
 })

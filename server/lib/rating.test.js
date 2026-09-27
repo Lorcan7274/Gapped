@@ -4,7 +4,7 @@ import { RATING, DUEL_POINTS, SEASON } from '../config/game.js'
 import {
   expectedTime, ratingForTime, expectedGap, expectedGapMetres, performanceDiff,
   performanceVsRating, kFactor, isProvisional, quitTime, duelPoints, settleDuel,
-  seasonCentre, seasonReset,
+  seasonCentre, seasonReset, paceDrift,
 } from './rating.js'
 
 const T = (rating, distanceM = 5000) => expectedTime(rating, distanceM)
@@ -478,21 +478,47 @@ describe('seasons', () => {
   })
 
   test('a reset squashes toward the centre and briefly speeds everyone up', () => {
-    const high = seasonReset({ rating: 1500, results: 40 }, 1000)
+    const high = seasonReset({ rating: 1500, results: 40 }, { centre: 1000 })
     close(high.rating, 1000 + 500 * SEASON.squash)
     assert.equal(high.results, RATING.provisionalResults - SEASON.provisionalBoost)
     assert.ok(kFactor(high.results) > RATING.kEstablished)
-    const low = seasonReset({ rating: 600, results: 1 }, 1000)
+    const low = seasonReset({ rating: 600, results: 1 }, { centre: 1000 })
     close(low.rating, 1000 - 400 * SEASON.squash)
     assert.equal(low.results, 1)
-    const centre = seasonReset({ rating: 1000, results: 9 }, 1000)
+    const centre = seasonReset({ rating: 1000, results: 9 }, { centre: 1000 })
     assert.equal(centre.rating, 1000)
   })
 
   test('a reset never produces negative results or ratings out of bounds', () => {
-    const r = seasonReset({ rating: 2900, results: 3 }, 2000, { ...SEASON, squash: 1.2, provisionalBoost: 9 })
+    const r = seasonReset({ rating: 2900, results: 3 }, { centre: 2000 }, { ...SEASON, squash: 1.2, provisionalBoost: 9 })
     assert.equal(r.results, 0)
     assert.equal(r.rating, RATING.maxRating)
+  })
+
+  test('re-anchoring shifts the whole scale by the measured drift, only when switched on', () => {
+    const on = { ...SEASON, squash: 1, reanchor: true }
+    close(seasonReset({ rating: 1234, results: 9 }, { centre: 1000, drift: -40 }, on).rating, 1194)
+    close(seasonReset({ rating: 1234, results: 9 }, { centre: 1000, drift: -40 }, { ...on, reanchor: false }).rating, 1234)
+  })
+
+  test('pace drift is the median of how much faster runners ran than their ratings said', () => {
+    const season = { ...SEASON, reanchorMinEfforts: 3, reanchorMaxShift: 100 }
+    // Three runners, each 50 rating points slower than rated: inflation.
+    const efforts = [900, 1200, 1500].map((rating) => ({
+      rating, distanceM: 5000, timeS: expectedTime(rating - 50, 5000),
+    }))
+    close(paceDrift(efforts, season), -50, 1e-9)
+    // One wild outlier does not move a median.
+    efforts.push({ rating: 1000, distanceM: 5000, timeS: expectedTime(1000, 5000) / 3 })
+    close(paceDrift([...efforts, efforts[0]], season), -50, 1e-9)
+  })
+
+  test('pace drift says nothing from too few efforts, and never shifts past the cap', () => {
+    const season = { ...SEASON, reanchorMinEfforts: 5, reanchorMaxShift: 30 }
+    const slow = Array.from({ length: 4 }, () => ({ rating: 1000, distanceM: 5000, timeS: T(700) }))
+    assert.equal(paceDrift(slow, season), 0)
+    assert.equal(paceDrift([...slow, slow[0]], season), -30)
+    assert.throws(() => paceDrift(null), /array/)
   })
 })
 
