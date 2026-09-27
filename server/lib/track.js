@@ -62,17 +62,21 @@ export function parseTrack(raw, { now }, cfg = TRACK) {
 }
 
 /**
- * Distance and time the way the phone counts them: fixes worse than the
+ * Walk a track with the filter the phone runs live: fixes worse than the
  * accuracy limit are dropped, a fix implying an impossible speed from the
  * last accepted one is dropped, and movement under the jitter floor holds
- * the anchor. Plus the plausibility flags that settle a run unranked.
+ * the anchor. Returns the totals and the distance profile — cumulative
+ * metres at each accepted fix, timed from the first accepted fix. The
+ * profile is what a ghost is: how far the runner had got, and when.
  */
-export function summariseTrack(points, cfg = TRACK) {
+export function walkTrack(points, cfg = TRACK) {
   let anchor = null
   let lastAccepted = null
+  let firstAccepted = null
   let distanceM = 0
   let accepted = 0
   let rejected = 0
+  const profile = []
   for (const p of points) {
     if (p.acc != null && p.acc > cfg.maxAccuracyM) {
       rejected += 1
@@ -85,18 +89,27 @@ export function summariseTrack(points, cfg = TRACK) {
         rejected += 1
         continue
       }
-      if (step < cfg.minStepM) {
-        accepted += 1
-        lastAccepted = p
-        continue
+      if (step >= cfg.minStepM) {
+        distanceM += step
+        anchor = p
       }
-      distanceM += step
+    } else {
+      anchor = p
+      firstAccepted = p
     }
-    anchor = p
     lastAccepted = p
     accepted += 1
+    profile.push([p.t - firstAccepted.t, distanceM])
   }
+  return { distanceM, accepted, rejected, firstAccepted, lastAccepted, profile }
+}
 
+/**
+ * Distance and time the way the phone counts them (see walkTrack), plus the
+ * plausibility flags that settle a run unranked.
+ */
+export function summariseTrack(points, cfg = TRACK) {
+  const { distanceM, accepted, rejected, lastAccepted } = walkTrack(points, cfg)
   const startedAt = points[0].t
   const endedAt = points.at(-1).t
   const elapsedMs = endedAt - startedAt
