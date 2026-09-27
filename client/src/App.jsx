@@ -2,21 +2,19 @@ import { useEffect, useState } from 'react'
 import { useSession } from './state/session.jsx'
 import Onboarding from './pages/Onboarding.jsx'
 import Home from './pages/Home.jsx'
-import Challenge from './pages/Challenge.jsx'
 import Battle from './pages/Battle.jsx'
-import Leaderboard from './pages/Leaderboard.jsx'
+import Running from './pages/Running.jsx'
 import Profile from './pages/Profile.jsx'
-import LocationButton from './components/LocationButton.jsx'
 import ThemeToggle from './components/ThemeToggle.jsx'
 import ChallengeSheet from './components/ChallengeSheet.jsx'
 import ResultSheet from './components/ResultSheet.jsx'
 import RankBackground from './components/RankBackground.jsx'
 import { Spinner, ConnectionStatus } from './components/ui.jsx'
+import { run, useRun } from './lib/run.js'
 
+// Pool (phase 4) and Friends (phase 5) join these as they arrive.
 const TABS = [
-  { key: 'home', label: 'Home' },
-  { key: 'lobby', label: 'Lobby' },
-  { key: 'ladder', label: 'Ladder' },
+  { key: 'home', label: 'Run' },
   { key: 'you', label: 'You' },
 ]
 
@@ -24,6 +22,12 @@ export default function App() {
   const { player, status, connection, match, notice, setNotice } = useSession()
   const [tab, setTab] = useState('home')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const current = useRun()
+
+  // A run that never reached the server gets another go once we are signed in.
+  useEffect(() => {
+    if (status === 'ready') run.resumePending()
+  }, [status])
 
   function go(key) {
     setTab(key)
@@ -46,12 +50,15 @@ export default function App() {
 
   if (status === 'signed-out') return <Onboarding />
 
+  // A run in progress, saving or just finished owns the whole screen.
+  if (current.phase !== 'idle') return <Running />
+
   // A live duel owns the whole screen.
   if (match) {
     return (
       <>
         <Battle />
-        {/* Call news (declined, dropped) has to reach a runner mid-duel too. */}
+        {/* News (a dropped duel, say) has to reach a runner mid-duel too. */}
         {notice && (
           <div className="pointer-events-none fixed inset-x-0 top-20 z-50 mx-auto max-w-[430px] px-6">
             <p
@@ -92,14 +99,11 @@ export default function App() {
         <div className="flex items-center gap-3">
           <ConnectionStatus status={connection} />
           <ThemeToggle className="-my-2" />
-          <LocationButton />
         </div>
       </header>
 
       <main className="relative flex flex-1 flex-col pb-[92px]">
-        {tab === 'home' && <Home onLobby={() => go('lobby')} />}
-        {tab === 'lobby' && <Challenge />}
-        {tab === 'ladder' && <Leaderboard />}
+        {tab === 'home' && <Home />}
         {tab === 'you' && <Profile settingsOpen={settingsOpen} />}
       </main>
 

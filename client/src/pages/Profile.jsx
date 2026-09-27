@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { useSession } from '../state/session.jsx'
-import { clock, distanceLabel, daysAgo } from '../lib/format.js'
+import { clock, metres, daysAgo } from '../lib/format.js'
+import { useRun } from '../lib/run.js'
 import { Shard } from '../components/Crystal.jsx'
 import { Button, Label, Spinner } from '../components/ui.jsx'
 
@@ -9,62 +10,55 @@ const field =
   'min-h-[56px] w-full border-b border-ink bg-transparent pb-2 text-[17px] ' +
   'font-700 text-ink placeholder:text-muted focus:outline-none'
 
+/**
+ * The You tab: what your running has grown — Shards, distance, runs, streak —
+ * and the runs themselves. No rating anywhere: the hidden number stays hidden.
+ */
 export default function Profile({ settingsOpen = false }) {
   const { player, setNotice } = useSession()
-  const [matches, setMatches] = useState(null)
+  const [runs, setRuns] = useState(null)
+  // A run just saved should show up without a reload.
+  const lastRunId = useRun().result?.run?.id
 
   useEffect(() => {
     if (!player) return
-    api('/api/me/matches', { playerId: player.id })
-      .then((d) => setMatches(d.matches))
-      .catch(() => setMatches([]))
-  }, [player?.id])
+    api('/api/me/runs')
+      .then((d) => setRuns(d.runs))
+      .catch(() => setRuns([]))
+  }, [player?.id, lastRunId])
 
   if (!player) return null
   if (settingsOpen) return <Settings player={player} setNotice={setNotice} />
 
-  // Oldest first, and only duels that actually moved the rating.
-  const settled = (matches ?? [])
-    .filter((m) => m.you.ratingAfter != null && m.you.ratingBefore != null)
-    .slice(0, CHART_DUELS)
-    .reverse()
-
   return (
     <div className="px-6 pb-32 pt-6">
       <div className="flex items-center gap-4">
-        <Shard size={34} tone={player.tier?.key ?? 'sapphire'} />
+        <Shard size={34} tone={player.tier?.key ?? 'bronze'} />
         <div className="min-w-0">
           <h2 className="display truncate text-[34px]">{player.displayName}</h2>
-          <p className="label mt-1 text-muted">{player.tier?.name}</p>
+          <p className="label mt-1 text-muted">{player.tier?.label}</p>
         </div>
       </div>
 
-      {/* 1428 needs a past: the chart turns the number into a trajectory. */}
-      <div className="mt-7 border-y border-rule py-5">
-        <div className="flex items-end justify-between gap-5">
-          <div>
-            <Label>Rating</Label>
-            <p className="display mt-1.5 text-[56px]">{player.rating}</p>
-          </div>
-          {settled.length > 0 && (
-            <Label>Last {settled.length} {settled.length === 1 ? 'duel' : 'duels'}</Label>
-          )}
-        </div>
-        {settled.length > 0 && <RatingChart duels={settled} playerId={player.id} />}
+      <div className="mt-7 grid grid-cols-2 border-y border-rule">
+        <Stat label="Shards" value={player.shards ?? 0} />
+        <Stat label="Distance" value={metres(player.lifetimeM ?? 0)} divided />
+        <Stat label="Runs" value={player.runs ?? 0} top />
+        <Stat label="Streak" value={player.streak ? `${player.streak}d` : '—'} divided top />
       </div>
 
       <div className="mt-7">
-        <Label>Recent duels</Label>
-        {matches === null ? (
+        <Label>Recent runs</Label>
+        {runs === null ? (
           <div className="py-8"><Spinner /></div>
-        ) : matches.length === 0 ? (
+        ) : runs.length === 0 ? (
           <p className="mt-3 text-[15px] text-slate">
-            No duels yet. Head to the lobby and challenge someone.
+            No runs yet. Start one from the Run tab — every run pays.
           </p>
         ) : (
           <ul className="mt-2.5">
-            {matches.map((m, i) => (
-              <DuelRow key={m.id} match={m} playerId={player.id} divided={i > 0} />
+            {runs.map((r, i) => (
+              <RunRow key={r.id} run={r} divided={i > 0} />
             ))}
           </ul>
         )}
@@ -73,119 +67,40 @@ export default function Profile({ settingsOpen = false }) {
   )
 }
 
-const CHART_DUELS = 8
-
-const outcomeOf = (m, playerId) =>
-  m.winnerId == null ? 'tie' : m.winnerId === playerId ? 'win' : 'loss'
-
-const OUTCOME = {
-  win: { word: 'Win', text: 'text-win', stroke: 'var(--color-win)' },
-  loss: { word: 'Loss', text: 'text-garnet', stroke: 'var(--color-loss)' },
-  tie: { word: 'Tie', text: 'text-muted', stroke: 'var(--color-muted)' },
-}
-
-/** +14, −11, ±0 — a true minus sign, and a tie that claims neither side. */
-const delta = (n) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '±0')
-
-/**
- * One row of history. Every row leads with the mode, then your result in
- * that mode, so the column scans the same way whichever mode it was.
- */
-function DuelRow({ match: m, playerId, divided }) {
-  const outcome = OUTCOME[outcomeOf(m, playerId)]
-  const change = m.you.ratingAfter != null ? m.you.ratingAfter - m.you.ratingBefore : null
-  const detail =
-    m.mode === 'timed'
-      ? `Distance ${clock(m.durationMs)} · ${Math.round(m.you.progressM ?? 0)} m`
-      : `Race ${distanceLabel(m.distanceM)}${m.you.elapsedMs != null ? ` · ${clock(m.you.elapsedMs)}` : ''}`
-  const tone = change > 0 ? 'text-win' : change < 0 ? 'text-garnet' : 'text-muted'
-
+function Stat({ label, value, divided = false, top = false }) {
   return (
-    <li className={divided ? 'border-t border-rule' : ''}>
-      <div className="flex min-h-[56px] items-center gap-3.5 py-[9px]">
-        <span className={`label w-11 shrink-0 tracking-[0.18em] ${outcome.text}`}>{outcome.word}</span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px]">{m.opponent.displayName}</p>
-          <p className="nums mt-0.5 text-[13px] text-muted">{detail}</p>
-        </div>
-        <div className="shrink-0 text-right">
-          {change != null && (
-            <p className={`nums text-[15px] font-700 ${tone}`}>{delta(change)}</p>
-          )}
-          <p className="mt-0.5 text-[12px] text-muted">
-            {daysAgo(m.finishedAt ?? m.startedAt)}
-          </p>
-        </div>
-      </div>
-    </li>
+    <div
+      className={`flex flex-col gap-1 py-4 ${divided ? 'border-l border-rule pl-4' : ''} ${top ? 'border-t border-rule' : ''}`}
+    >
+      <Label>{label}</Label>
+      <span className="display nums text-[28px]">{value}</span>
+    </div>
   )
 }
 
-/* Plot box inside the 354×140 viewBox: axes on the left and bottom, dates
-   under the x axis, ratings beside the y axis. */
-const X0 = 34
-const X1 = 348
-const Y_TOP = 12
-const Y_BOTTOM = 103
-const AXIS_Y = 112
-const STEPS = [5, 10, 20, 25, 50, 100, 200, 250, 500]
-
-/**
- * Rating over the last few duels, one segment per duel coloured by its
- * outcome — green for a win, red for a loss, grey for a tie — so streaks
- * read at a glance. Gridlines land on round ratings.
- */
-function RatingChart({ duels, playerId }) {
-  const ratings = [duels[0].you.ratingBefore, ...duels.map((m) => m.you.ratingAfter)]
-  const lo = Math.min(...ratings)
-  const hi = Math.max(...ratings)
-  const step = STEPS.find((s) => (hi - lo) / s <= 3) ?? 1000
-  const floor = Math.floor(lo / step) * step
-  const ceil = Math.max(Math.ceil(hi / step) * step, floor + step)
-  const y = (r) => Y_BOTTOM - ((r - floor) / (ceil - floor)) * (Y_BOTTOM - Y_TOP)
-  const x = (i) => X0 + (i / (ratings.length - 1)) * (X1 - X0)
-  const grid = []
-  for (let r = floor + step; r <= ceil; r += step) grid.push(r)
-  const when = (m) => daysAgo(m.finishedAt ?? m.startedAt)
-  const mid = duels[Math.floor((duels.length - 1) / 2)]
-
+/** One run: when, how far, how long, and what it paid. */
+function RunRow({ run, divided }) {
+  const quarantined = run.status === 'quarantined'
+  const tags = [run.kind === 'solo' ? 'Solo' : run.kind, run.private && 'private'].filter(Boolean)
   return (
-    <svg
-      viewBox="0 0 354 140"
-      className="mt-4 block h-[140px] w-full"
-      role="img"
-      aria-label={`Rating went from ${ratings[0]} to ${ratings[ratings.length - 1]} over the last ${duels.length} duels`}
-    >
-      {grid.map((r) => (
-        <g key={r}>
-          <line x1={X0} y1={y(r)} x2={X1} y2={y(r)} stroke="var(--color-rule)" strokeDasharray="3 4" />
-          <text x="28" y={y(r) + 3.2} textAnchor="end" className="nums" fontSize="10" fill="var(--color-muted)">
-            {r}
-          </text>
-        </g>
-      ))}
-      <line x1={X0} y1="6" x2={X0} y2={AXIS_Y} stroke="var(--color-slate)" />
-      <line x1={X0} y1={AXIS_Y} x2={X1} y2={AXIS_Y} stroke="var(--color-slate)" />
-      {duels.map((m, i) => (
-        <line
-          key={m.id}
-          x1={x(i)} y1={y(ratings[i])} x2={x(i + 1)} y2={y(ratings[i + 1])}
-          stroke={OUTCOME[outcomeOf(m, playerId)].stroke}
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        />
-      ))}
-      <circle cx={X1} cy={y(ratings[ratings.length - 1])} r="3.5" fill="var(--color-ink)" />
-      <text x={X0} y="130" fontSize="10" fill="var(--color-muted)">{when(duels[0])}</text>
-      {duels.length > 2 && (
-        <text x={(X0 + X1) / 2} y="130" textAnchor="middle" fontSize="10" fill="var(--color-muted)">
-          {when(mid)}
-        </text>
-      )}
-      <text x={X1} y="130" textAnchor="end" fontSize="10" fill="var(--color-muted)">
-        {when(duels[duels.length - 1])}
-      </text>
-    </svg>
+    <li className={divided ? 'border-t border-rule' : ''}>
+      <div className="flex min-h-[56px] items-center gap-3.5 py-[9px]">
+        <div className="min-w-0 flex-1">
+          <p className="nums text-[15px]">
+            {metres(run.distanceM)} <span className="text-muted">· {clock(run.elapsedMs)}</span>
+          </p>
+          <p className="mt-0.5 text-[13px] text-muted">{tags.join(' · ')}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          {quarantined ? (
+            <p className="text-[13px] text-garnet">Under review</p>
+          ) : (
+            <p className="nums text-[15px] font-700">+{run.shards} shards</p>
+          )}
+          <p className="mt-0.5 text-[12px] text-muted">{daysAgo(run.startedAt)}</p>
+        </div>
+      </div>
+    </li>
   )
 }
 

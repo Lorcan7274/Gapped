@@ -36,7 +36,7 @@ export default function ChallengeSheet() {
         <Label className="text-garnet">Challenge</Label>
         <p className="display text-[44px]">{incoming.from.displayName}</p>
         <p className="nums text-[15px] text-slate">
-          {incoming.from.rating} · wants{' '}
+          {incoming.from.tier?.label ?? 'Live duel'} · wants{' '}
           {incoming.mode === 'timed'
             ? formatDuration(incoming.durationMs / 60_000)
             : distanceLabel(incoming.distanceM)}

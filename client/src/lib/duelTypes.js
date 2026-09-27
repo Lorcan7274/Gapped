@@ -10,42 +10,6 @@ export const formatMetres = (m) =>
   m < 1000 ? `${m} m` : `${m % 1000 === 0 ? m / 1000 : (m / 1000).toFixed(1)} km`
 
 /**
- * Quick match runs exactly two fixed formats — a random opponent agrees to
- * a format, not a negotiation, and two pools are the most a small player
- * base keeps liquid. The numbers mirror QUICK_FORMATS on the server, which
- * /api/meta serves as the source of truth; this copy is a fallback for
- * before meta loads, merged by key so words live here and numbers there.
- */
-export const QUICK_FORMATS = [
-  {
-    key: 'race',
-    name: 'Race',
-    blurb: 'First to the kilometre wins.',
-    mode: 'race',
-    distanceM: 1000,
-  },
-  {
-    key: 'distance',
-    name: 'Distance',
-    blurb: 'Most metres before the clock runs out.',
-    mode: 'timed',
-    durationMs: 600_000,
-  },
-]
-
-export const formatsFrom = (meta) =>
-  meta?.formats?.length
-    ? meta.formats.map((format) => ({
-        ...QUICK_FORMATS.find((local) => local.key === format.key),
-        ...format,
-      }))
-    : QUICK_FORMATS
-
-/** '1 km' or '10 minutes' — the amount a quick format runs. */
-export const formatDetail = ({ mode, distanceM, durationMs }) =>
-  mode === 'timed' ? formatDuration(durationMs / 60_000) : formatMetres(distanceM ?? 0)
-
-/**
  * Custom presets for a direct challenge, where the full menu is fair game —
  * you know who you are asking. `param` is minutes for a timed duel and
  * metres for a fixed-distance one.
@@ -87,9 +51,9 @@ export const CUSTOM_DURATIONS = [1, 2, 5, 10, 20, 30]
  */
 export const FALLBACK_DISTANCES = [100, 200, 400, 800, 1000, 2000, 3000, 5000]
 export const distancesFrom = (meta) =>
-  meta?.distances?.length ? meta.distances : FALLBACK_DISTANCES
+  meta?.live?.distances?.length ? meta.live.distances : FALLBACK_DISTANCES
 export const durationsFrom = (meta) =>
-  meta?.durationsMinutes?.length ? meta.durationsMinutes : CUSTOM_DURATIONS
+  meta?.live?.durationsMinutes?.length ? meta.live.durationsMinutes : CUSTOM_DURATIONS
 
 /** The wire payload for a direct challenge in a chosen custom shape. */
 export const challengePayload = (opponentId, { unit, param }) =>

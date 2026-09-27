@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { createTracker } from '../lib/tracker.js'
 import { Label } from '../components/ui.jsx'
-import { CallButton, CallStrip, CallVideo, CallControls } from '../components/CallPanel.jsx'
+import HoldToEnd from '../components/HoldToEnd.jsx'
+import { useWakeLock } from '../lib/wakeLock.js'
 
 const REPORT_INTERVAL_MS = 2000
-const HOLD_TO_END_MS = 1200
 
 const clock = (ms) => {
   const total = Math.max(0, Math.round(ms / 1000))
@@ -18,54 +18,8 @@ const paceLabel = (msPerKm) => {
 }
 
 /**
- * Forfeiting mid-run must survive sweaty thumbs and a bouncing screen, so it
- * is a real press-and-hold: nothing happens until the bar fills.
- */
-function HoldToEnd({ onDone }) {
-  const [pct, setPct] = useState(0)
-  const timerRef = useRef(null)
-
-  const stop = () => {
-    clearInterval(timerRef.current)
-    timerRef.current = null
-    setPct(0)
-  }
-  const start = () => {
-    if (timerRef.current) return
-    const t0 = Date.now()
-    timerRef.current = setInterval(() => {
-      const next = Math.min(100, ((Date.now() - t0) / HOLD_TO_END_MS) * 100)
-      setPct(next)
-      if (next >= 100) {
-        stop()
-        onDone()
-      }
-    }, 50)
-  }
-  useEffect(() => () => clearInterval(timerRef.current), [])
-
-  return (
-    <button
-      onPointerDown={start}
-      onPointerUp={stop}
-      onPointerLeave={stop}
-      onPointerCancel={stop}
-      onContextMenu={(e) => e.preventDefault()}
-      className="btn btn-outline relative select-none overflow-hidden touch-none"
-    >
-      <span
-        aria-hidden="true"
-        className="absolute inset-y-0 left-0 bg-garnet/20 transition-none"
-        style={{ width: `${pct}%` }}
-      />
-      <span className="relative">Hold to end</span>
-    </button>
-  )
-}
-
-/**
- * The hero screen. Must read at arm's length in direct sunlight, so it holds
- * the gap and nothing that competes with it.
+ * A live friend duel. Must read at arm's length in direct sunlight, so it
+ * holds the gap and nothing that competes with it: green ahead, garnet behind.
  */
 export default function Battle() {
   const { match, send, opponentProgress } = useSession()
@@ -79,35 +33,11 @@ export default function Battle() {
   const trackerRef = useRef(null)
   const lastReportRef = useRef(0)
   const finishedRef = useRef(false)
-  const wakeLockRef = useRef(null)
   // A reload mid-duel restarts the GPS trail at zero, but the server still
   // holds the metres already run; resume on top of them instead of at 0.
   const baseRef = useRef(match?.resumeProgressM ?? 0)
 
-  /* Screen wake lock — the phone must not sleep mid-duel. */
-  useEffect(() => {
-    let released = false
-    const acquire = async () => {
-      try {
-        if ('wakeLock' in navigator && !released) {
-          wakeLockRef.current = await navigator.wakeLock.request('screen')
-        }
-      } catch {
-        /* denied or unsupported; the duel still runs */
-      }
-    }
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') acquire()
-    }
-    acquire()
-    document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      released = true
-      document.removeEventListener('visibilitychange', onVisible)
-      wakeLockRef.current?.release?.().catch(() => {})
-      wakeLockRef.current = null
-    }
-  }, [])
+  useWakeLock()
 
   useEffect(() => {
     if (!match) return
@@ -212,21 +142,18 @@ export default function Battle() {
         <span className="label text-ink">
           Versus {match.opponent?.displayName ?? 'Opponent'}
         </span>
-        <CallButton />
       </header>
-      <CallStrip />
 
       {/* The gap. Everything else on this screen defers to it. */}
       <div className="relative flex flex-1 flex-col items-center justify-center">
-        <CallVideo />
         <p
           className={`display display-tight text-[112px] ${
-            ahead ? 'text-ink' : 'text-garnet'
+            ahead ? 'text-win' : 'text-garnet'
           }`}
         >
           {gapText}
         </p>
-        <p className={`display text-[40px] ${ahead ? 'text-ink' : 'text-garnet'}`}>
+        <p className={`display text-[40px] ${ahead ? 'text-win' : 'text-garnet'}`}>
           metres
         </p>
         <p
@@ -262,7 +189,6 @@ export default function Battle() {
             <p className="display mt-1.5 text-[32px]">{Math.round(mine)} m</p>
           </div>
         </div>
-        <CallControls />
         {phase === 'done' ? (
           <p className="py-4 text-center text-[15px] text-slate">
             {timed ? 'Time. Waiting on the result…' : 'Finished. Waiting on the result…'}
