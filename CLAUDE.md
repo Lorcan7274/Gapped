@@ -27,13 +27,13 @@ The rework runs in phases, each leaving the app runnable, each in small commits:
 | --- | --- | --- |
 | 0 | Migrations, auth seam, production guard | **done** |
 | 1 | Hidden rating engine + simulation harness | **done** |
-| 2 | Run modes, run recording/storage, Shards + Fuel + streak; most of the kill list | next |
-| 3 | Ghost replay in the tracker; duel flow (challenge → reply → Sunday settlement) | |
+| 2 | Run modes, run recording/storage, Shards + Fuel + streak; most of the kill list | **done** |
+| 3 | Ghost replay in the tracker; duel flow (challenge → reply → Sunday settlement) | next |
 | 4 | Pools, feed, points, weekly promote/relegate job, bounty | |
 | 5 | Friends, live friend duels (refactor of `ws/hub.js`), wagers | |
 | 6 | Placement import, house ghosts, anti-cheat | |
 
-**Still running but legacy — do not extend, only delete or refactor per the plan:** the stranger-matchmaking live duel stack (`ws/hub.js` presence/discovery/quick-match queue/stranger challenges, `db/matches.js`, `lib/elo.js` and its rating-based tiers, `routes/join.js` location + nearby, `routes/players.js` nearby/leaderboard, client `pages/Challenge.jsx` lobby, `components/LocationButton.jsx`, `lib/ranking.js`), the video call (`lib/call.js`, `components/CallPanel.jsx`, `call:*` frames, `ICE_SERVERS_JSON`), and the `players.rating/wins/losses/lat/lng` columns. The Home "Duel" sheet's *Random lobby* half is legacy too; that sheet becomes the Solo/Duel picker.
+**Still running but dormant — do not extend:** the live duel socket (`ws/hub.js`, `db/liveDuels.js`, client `Battle.jsx`/`ChallengeSheet.jsx`/`ResultSheet.jsx`) still lets any signed-in player challenge another by id. It moves no points and no rating, and nothing in the UI starts one (the sheets only answer an incoming challenge or rematch); phase 5 puts it behind the friends gate. `DuelSetup.jsx` is likewise unused until then. `components/DuelSheet.jsx` + `lib/duelRig.js` are unused and wait to become the phase 3 Solo/Duel picker. Everything else on the kill list is deleted: discovery, presence, the queue, geography, calls, Elo, the old `matches`/`challenges` tables and the `players.rating/wins/losses/lat/lng` columns (migration 004 seeded the hidden rating and tier from the old rating).
 
 **Tuning decided after the phase 1 simulation** (`npm run sim -- --compare` shows why): the hidden rating moves on the two duel efforts (`RATING.evidence: 'efforts'`), not the combined margin; seasons re-anchor the scale to measured pace (`SEASON.reanchor`) instead of squashing it (`squash: 1`); `RATING.kEstablished` is 20. Cherry-picking a soft ghost from the feed is worth ~12% more points per duel under the combined-margin points rule — accepted for now, to revisit with the points economy in phase 4. The in-run gap is green when leading, garnet when trailing.
 
@@ -77,7 +77,10 @@ One Node process, one origin: Fastify serves the JSON API, the static Vite build
 - `lib/rating.js` — **the hidden rating engine. Pure and deterministic: no I/O, no clock, no randomness.** Every function takes its tunables last, defaulting to `config/game.js`, so the simulator sweeps the exact code that settles real duels. Covered by `lib/rating.test.js` (unit + seeded property tests).
 - `sim/` — the simulation harness: synthetic runners with known true ability (`world.js`, assumptions about real runners — not game rules), weekly pools of ghost duels through the real engine (`simulate.js`), and the report (`report.js`). Any change to the engine or its numbers gets a before/after `npm run sim -- --compare`.
 - `lib/serialize.js` decides what the wire sees — never hand raw rows to a route or socket, and never serialise the hidden rating.
-- `ws/hub.js`, `routes/` — legacy stranger-duel stack, to be cut down (see *Rework status*).
+- `lib/track.js` — parses and checks an uploaded GPS track (the same filter as the client tracker) and flags runs to quarantine (too fast, too noisy): stored, pays nothing, takes nothing. `lib/economy.js` — pure Shards/Fuel/points/streak maths and the Europe/Dublin calendar (days, weeks named by their Monday). `lib/ladder.js` — tiers and their labels.
+- `db/runs.js` records a run with its track and ledger rows (`point_events`, `fuel_events`) in one transaction; `(player_id, started_at)` is unique, so a re-sent run returns the first one (`duplicate: true`) and never pays twice.
+- `app.js` builds the Fastify app (auth seam, `routes/me.js`, `routes/runs.js`) so tests use `inject`; `index.js` adds the socket, static files and `listen`.
+- `ws/hub.js` — live friend duels only (dormant until phase 5, see *Rework status*).
 
 ### The hidden rating (`lib/rating.js`)
 
@@ -96,7 +99,7 @@ A rating is a pace: 1000 runs 5 km in 30:00, every 1000 points halves the time (
 
 ### Client (`client/src/`)
 
-React 19 + Vite + Tailwind v4. No router: `App.jsx` switches tabs from local state (target: Run · Pool · Friends · You), and a live run takes over the whole screen. `state/session.jsx` owns sign-in state and the socket; the socket authenticates with the session token only. `lib/tracker.js` is the GPS filter (rejects fixes worse than 25 m accuracy or implying > 11 m/s, holds sub-3 m steps as jitter) with a test bench at `/debug`; it is to grow track recording and ghost replay.
+React 19 + Vite + Tailwind v4. No router: `App.jsx` switches tabs from local state (today Run · You; target Run · Pool · Friends · You), and a run in progress takes over the whole screen (`pages/Running.jsx`). `state/session.jsx` owns sign-in state and the socket; the socket authenticates with the session token only. `lib/tracker.js` is the GPS filter (rejects fixes worse than 25 m accuracy or implying > 11 m/s, holds sub-3 m steps as jitter) with a test bench at `/debug`. `lib/run.js` is **the run store — the one source of truth mid-run** (phase, distance, clock, pace, GPS state, result), read through `useRun()`; it records raw fixes and keeps a finished run in `localStorage` (`gapped.pendingRun`) until the server has it, retrying on next launch. Ghost replay and the gap go here in phase 3.
 
 ### Design system ("Shard Mono")
 
