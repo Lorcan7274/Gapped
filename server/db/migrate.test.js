@@ -54,13 +54,34 @@ test('anonymous accounts and everything pointing at them are deleted', () => {
   match.run('m-anon', 'c-anon', 'p', 'anon', 'anon')
   match.run('m-ok', 'c-ok', 'p', 'q', 'q')
 
-  const ran = runMigrations(db, migrations, quiet)
+  // Up to the migration under test; later ones drop the stranger-duel tables.
+  const ran = runMigrations(db, migrations.filter((m) => m.version <= 3), quiet)
   assert.ok(ran.some((m) => m.name === 'drop_anonymous_players'))
   assert.deepEqual(db.prepare('SELECT id FROM players ORDER BY id').all().map((r) => r.id), ['p', 'q'])
   assert.deepEqual(db.prepare('SELECT token FROM sessions').all().map((r) => r.token), ['tok-p'])
   assert.deepEqual(db.prepare('SELECT id FROM challenges').all().map((r) => r.id), ['c-ok'])
   assert.deepEqual(db.prepare('SELECT id FROM matches').all().map((r) => r.id), ['m-ok'])
   assert.deepEqual(db.pragma('foreign_key_check'), [])
+  runMigrations(db, migrations, quiet)
+  assert.deepEqual(db.pragma('foreign_key_check'), [])
+})
+
+test('existing players keep a starting hidden rating and their old tier', () => {
+  const db = fresh()
+  runMigrations(db, migrations.filter((m) => m.version <= 3), quiet)
+  const player = db.prepare(
+    'INSERT INTO players (id, display_name, rating, created_at) VALUES (?, ?, ?, 0)'
+  )
+  player.run('a', 'Gold Runner', 1300)
+  player.run('b', 'New Runner', 1000)
+  runMigrations(db, migrations, quiet)
+  const rows = db.prepare('SELECT id, mmr, ladder_tier FROM players ORDER BY id').all()
+  assert.deepEqual(rows, [
+    { id: 'a', mmr: 1300, ladder_tier: 'gold' },
+    { id: 'b', mmr: 1000, ladder_tier: 'bronze' },
+  ])
+  const columns = db.prepare('PRAGMA table_info(players)').all().map((c) => c.name)
+  for (const gone of ['rating', 'wins', 'lat', 'lng']) assert.ok(!columns.includes(gone), gone)
 })
 
 test('the oldest players layout is rebuilt before the baseline lands', () => {

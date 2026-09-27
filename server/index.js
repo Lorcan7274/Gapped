@@ -1,49 +1,20 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import Fastify from 'fastify'
 import fastifyStatic from '@fastify/static'
 
 import { PORT, HOST, DATABASE_PATH, IS_PRODUCTION } from './config/env.js'
 import { APPLIED_MIGRATIONS } from './db/index.js'
-import { getPlayer, touchPlayer, createPlayer, rankOf } from './db/players.js'
-import { registerAuth, playerIdForRequest, purgeExpired } from './auth/index.js'
-import { normaliseDisplayName } from './lib/validate.js'
-import { selfPlayer } from './lib/serialize.js'
-import joinRoutes from './routes/join.js'
-import playerRoutes from './routes/players.js'
+import { purgeExpired } from './auth/index.js'
+import { buildApp } from './app.js'
 import { createHub } from './ws/hub.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const clientDist = path.join(here, '..', 'client', 'dist')
 
-const app = Fastify({
-  logger: {
-    level: process.env.LOG_LEVEL || (IS_PRODUCTION ? 'info' : 'debug'),
-    ...(IS_PRODUCTION ? {} : { transport: undefined }),
-  },
-  trustProxy: true,
+const app = await buildApp({
+  logger: { level: process.env.LOG_LEVEL || (IS_PRODUCTION ? 'info' : 'debug') },
 })
-
-/* --------------------------------------------------------------- identity */
-
-// Who is calling, or null. The session token from sign-in is the only
-// credential; auth/ turns it into a player id.
-app.decorate('resolvePlayer', (request) => getPlayer(playerIdForRequest(request)))
-
-// The guard for routes that need a caller. A 404 (not 401) tells the client
-// the credential is dead and it should clear storage and show sign-in again.
-app.decorate('requirePlayer', async (request, reply) => {
-  const player = app.resolvePlayer(request)
-  if (!player) {
-    return reply
-      .code(404)
-      .send({ error: 'That player no longer exists. Sign in again.', code: 'unknown_player' })
-  }
-  touchPlayer(player.id)
-  request.player = player
-})
-app.decorateRequest('player', null)
 
 /* --------------------------------------------------------------- routes */
 
@@ -63,20 +34,8 @@ app.get('/api/health', async () => ({
   build: BUILD,
 }))
 
-// The hub is created before the routes so a join can push the new player
-// list straight out over the sockets.
+// Live friend duels run over the WebSocket hub; everything else is HTTP.
 const hub = createHub(app.log)
-
-await registerAuth(app, {
-  createPlayer: ({ displayName }) => {
-    const name = normaliseDisplayName(displayName)
-    return name ? createPlayer({ displayName: name }).id : null
-  },
-  describePlayer: (playerId) => selfPlayer(getPlayer(playerId), { rank: rankOf(playerId) }),
-  onPlayerCreated: () => hub.broadcastPlayers(),
-})
-await app.register(joinRoutes(() => hub.broadcastPlayers()))
-await app.register(playerRoutes)
 
 /* ------------------------------------------------- static Vite frontend */
 

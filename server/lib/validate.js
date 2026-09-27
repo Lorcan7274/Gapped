@@ -12,21 +12,6 @@ export function normaliseDisplayName(input) {
 }
 
 // Coordinates are optional everywhere: a denied permission is not an error.
-export function normaliseCoords(lat, lng) {
-  // Number(null) and Number('') are both 0, which would silently place a
-  // player who denied location at Null Island and make everyone "nearby".
-  if (lat == null || lng == null || lat === '' || lng === '') return null
-  const parsedLat = Number(lat)
-  const parsedLng = Number(lng)
-  const usable =
-    Number.isFinite(parsedLat) && Number.isFinite(parsedLng) &&
-    parsedLat >= -90 && parsedLat <= 90 &&
-    parsedLng >= -180 && parsedLng <= 180
-  return usable ? { lat: parsedLat, lng: parsedLng } : null
-}
-
-// Race distances players can pick, in metres. Metric only — the app has one
-// unit system, and the gap it is built around is measured in metres.
 export const DISTANCES = [100, 200, 400, 800, 1000, 2000, 3000, 5000]
 
 export function normaliseDistance(input) {
@@ -46,16 +31,3 @@ export function normaliseDuration(input) {
 // metres in ten minutes. A random opponent agrees to a format, not a
 // negotiation, and two pools are the most a small player base keeps liquid.
 // The full lists above stay on offer when you challenge someone directly.
-export const QUICK_FORMATS = {
-  race: { mode: 'race', distanceM: 1000 },
-  distance: { mode: 'timed', durationMs: 600_000 },
-}
-
-export function normaliseFormat(input) {
-  // hasOwn, not a truthiness lookup: 'toString' must not name a format.
-  return typeof input === 'string' && Object.hasOwn(QUICK_FORMATS, input)
-    ? input
-    : null
-}
-
-

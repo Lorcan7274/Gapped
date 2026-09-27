@@ -1,87 +1,54 @@
-import { tierFor } from './elo.js'
-import { distanceMetres } from './geo.js'
 import { verifiedAs } from '../auth/index.js'
+import { ladderPosition } from './ladder.js'
+import { currentStreak, localDay } from './economy.js'
 
 /**
- * What one player may see about another. Raw coordinates never leave the
- * server — a viewer gets a distance, and only when both sides have a
- * position. Everything else is public by design.
+ * What the wire sees. Never hand raw rows to a route or socket: rows carry
+ * the hidden rating, which no player — including its owner — ever sees.
  */
-export function publicPlayer(row, viewer = null, extra = {}) {
+
+/** What one player may see about another: a name and a place on the ladder. */
+export function publicPlayer(row) {
   if (!row) return null
-  const tier = tierFor(row.rating)
-
-  // Distance and rating gap are computed here, relative to whoever is
-  // asking, so raw coordinates never leave the server.
-  let distanceM = null
-  let ratingGap = null
-  if (viewer && viewer.id !== row.id) {
-    ratingGap = Math.abs(row.rating - viewer.rating)
-    if (viewer.lat != null && viewer.lng != null && row.lat != null && row.lng != null) {
-      distanceM = Math.round(distanceMetres(viewer.lat, viewer.lng, row.lat, row.lng))
-    }
-  }
-
   return {
     id: row.id,
     displayName: row.display_name,
-    rating: row.rating,
-    peakRating: row.peak_rating,
-    games: row.games,
-    wins: row.wins,
-    losses: row.losses,
-    draws: row.draws,
-    tier: { key: tier.key, name: tier.name, colour: tier.colour },
-    hasLocation: row.lat != null && row.lng != null,
-    lastSeenAt: row.last_seen_at,
+    tier: ladderPosition(row.ladder_tier, row.ladder_division),
     createdAt: row.created_at,
-    ...(distanceM != null ? { distanceM } : {}),
-    ...(ratingGap != null ? { ratingGap } : {}),
-    ...(row.distance_m != null ? { distanceM: row.distance_m } : {}),
-    ...(row.rating_gap != null ? { ratingGap: row.rating_gap } : {}),
+  }
+}
+
+/** The viewer's own record: their currencies and progress, still no rating. */
+export function selfPlayer(row, extra = {}, now = Date.now()) {
+  if (!row) return null
+  return {
+    ...publicPlayer(row),
+    shards: row.shards,
+    fuel: row.fuel,
+    streak: currentStreak({ days: row.streak_days, lastDay: row.streak_last_day }, localDay(now)),
+    lifetimeM: Math.round(row.lifetime_m),
+    runs: row.runs,
+    // How you signed in, shown only to you.
+    verifiedAs: verifiedAs(row.id),
     ...extra,
   }
 }
 
-/** The viewer's own record, which may include their own coordinates. */
-export function selfPlayer(row, extra = {}) {
-  return {
-    ...publicPlayer(row, null, extra),
-    lat: row.lat,
-    lng: row.lng,
-    locatedAt: row.located_at,
-    // How you signed in, shown only to you. Nobody else's serialisation
-    // ever carries it.
-    verifiedAs: verifiedAs(row.id),
-  }
-}
-
-export function publicMatch(row, viewerId) {
+/** A recorded run, as its owner sees it. */
+export function serializeRun(row) {
   if (!row) return null
-  const viewerIsA = row.a_id === viewerId
   return {
     id: row.id,
-    mode: row.mode ?? 'race',
-    distanceM: row.distance_m,
-    durationMs: row.duration_ms ?? null,
-    status: row.status,
+    kind: row.kind,
+    private: Boolean(row.private),
     startedAt: row.started_at,
-    finishedAt: row.finished_at,
-    winnerId: row.winner_id,
-    you: {
-      id: viewerIsA ? row.a_id : row.b_id,
-      progressM: viewerIsA ? row.a_progress_m : row.b_progress_m,
-      elapsedMs: viewerIsA ? row.a_elapsed_ms : row.b_elapsed_ms,
-      ratingBefore: viewerIsA ? row.a_rating_before : row.b_rating_before,
-      ratingAfter: viewerIsA ? row.a_rating_after : row.b_rating_after,
-    },
-    opponent: {
-      id: viewerIsA ? row.b_id : row.a_id,
-      displayName: viewerIsA ? row.b_name : row.a_name,
-      progressM: viewerIsA ? row.b_progress_m : row.a_progress_m,
-      elapsedMs: viewerIsA ? row.b_elapsed_ms : row.a_elapsed_ms,
-      ratingBefore: viewerIsA ? row.b_rating_before : row.a_rating_before,
-      ratingAfter: viewerIsA ? row.b_rating_after : row.a_rating_after,
-    },
+    endedAt: row.ended_at,
+    distanceM: Math.round(row.distance_m),
+    elapsedMs: row.elapsed_ms,
+    // 'ok', or 'quarantined': flagged, settled unranked pending review.
+    status: row.status,
+    shards: row.shards,
+    fuel: row.fuel,
+    points: row.points,
   }
 }

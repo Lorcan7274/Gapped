@@ -1,28 +1,27 @@
 import { db, now } from './index.js'
 import { newId } from '../lib/ids.js'
-import { settle } from '../lib/elo.js'
 import { CHALLENGE_TTL_MS } from '../config/env.js'
 
-/* ---------------------------------------------------------------- challenges */
+/* ------------------------------------------------------- live challenges */
 
 const insertChallenge = db.prepare(`
-  INSERT INTO challenges (id, from_id, to_id, mode, distance_m, duration_ms, status, created_at, expires_at)
+  INSERT INTO live_challenges (id, from_id, to_id, mode, distance_m, duration_ms, status, created_at, expires_at)
   VALUES (@id, @from_id, @to_id, @mode, @distance_m, @duration_ms, 'pending', @created_at, @expires_at)
 `)
 
-const selectChallenge = db.prepare('SELECT * FROM challenges WHERE id = ?')
+const selectChallenge = db.prepare('SELECT * FROM live_challenges WHERE id = ?')
 const setChallengeStatus = db.prepare(
-  'UPDATE challenges SET status = ?, responded_at = ? WHERE id = ? AND status = \'pending\''
+  'UPDATE live_challenges SET status = ?, responded_at = ? WHERE id = ? AND status = \'pending\''
 )
 const selectStaleChallenges = db.prepare(
-  "SELECT * FROM challenges WHERE status = 'pending' AND expires_at < ?"
+  "SELECT * FROM live_challenges WHERE status = 'pending' AND expires_at < ?"
 )
 const expireStaleChallenges = db.prepare(
-  "UPDATE challenges SET status = 'expired' WHERE status = 'pending' AND expires_at < ?"
+  "UPDATE live_challenges SET status = 'expired' WHERE status = 'pending' AND expires_at < ?"
 )
 
 const countLiveFor = db.prepare(`
-  SELECT COUNT(*) AS n FROM matches
+  SELECT COUNT(*) AS n FROM live_duels
   WHERE status = 'live' AND (a_id = ? OR b_id = ?)
 `)
 
@@ -50,7 +49,7 @@ export function resolveChallenge(id, status) {
   return setChallengeStatus.run(status, now(), id).changes === 1
 }
 
-/** Expire challenges nobody answered; returns the rows so both sides can be told. */
+/** Expire live_challenges nobody answered; returns the rows so both sides can be told. */
 export function expireChallenges() {
   const ts = now()
   const rows = selectStaleChallenges.all(ts)
@@ -61,58 +60,40 @@ export function expireChallenges() {
 export const hasLiveMatch = (playerId) =>
   countLiveFor.get(playerId, playerId).n > 0
 
-/* ------------------------------------------------------------------- matches */
+/* ------------------------------------------------------------ live duels */
 
 const insertMatch = db.prepare(`
-  INSERT INTO matches (
-    id, challenge_id, a_id, b_id, mode, distance_m, duration_ms, status,
-    a_rating_before, b_rating_before, started_at
+  INSERT INTO live_duels (
+    id, challenge_id, a_id, b_id, mode, distance_m, duration_ms, status, started_at
   ) VALUES (
-    @id, @challenge_id, @a_id, @b_id, @mode, @distance_m, @duration_ms, 'live',
-    @a_rating_before, @b_rating_before, @started_at
+    @id, @challenge_id, @a_id, @b_id, @mode, @distance_m, @duration_ms, 'live', @started_at
   )
 `)
 
-const selectMatch = db.prepare('SELECT * FROM matches WHERE id = ?')
+const selectMatch = db.prepare('SELECT * FROM live_duels WHERE id = ?')
 const selectLiveForPlayer = db.prepare(`
-  SELECT * FROM matches
+  SELECT * FROM live_duels
   WHERE status = 'live' AND (a_id = ? OR b_id = ?)
   ORDER BY started_at DESC LIMIT 1
 `)
 
-const setProgressA = db.prepare('UPDATE matches SET a_progress_m = ? WHERE id = ?')
-const setProgressB = db.prepare('UPDATE matches SET b_progress_m = ? WHERE id = ?')
-const setElapsedA = db.prepare('UPDATE matches SET a_elapsed_ms = ? WHERE id = ?')
-const setElapsedB = db.prepare('UPDATE matches SET b_elapsed_ms = ? WHERE id = ?')
+const setProgressA = db.prepare('UPDATE live_duels SET a_progress_m = ? WHERE id = ?')
+const setProgressB = db.prepare('UPDATE live_duels SET b_progress_m = ? WHERE id = ?')
+const setElapsedA = db.prepare('UPDATE live_duels SET a_elapsed_ms = ? WHERE id = ?')
+const setElapsedB = db.prepare('UPDATE live_duels SET b_elapsed_ms = ? WHERE id = ?')
 
 const finishMatch = db.prepare(`
-  UPDATE matches
-  SET status = 'finished', winner_id = @winner_id, finished_at = @finished_at,
-      a_rating_after = @a_rating_after, b_rating_after = @b_rating_after
+  UPDATE live_duels
+  SET status = 'finished', winner_id = @winner_id, finished_at = @finished_at
   WHERE id = @id AND status = 'live'
 `)
 
 const abandonMatch = db.prepare(`
-  UPDATE matches SET status = 'abandoned', finished_at = ? WHERE id = ? AND status = 'live'
-`)
-
-const selectPlayerForUpdate = db.prepare(
-  'SELECT id, rating, peak_rating, games, wins, losses, draws FROM players WHERE id = ?'
-)
-
-const applyResult = db.prepare(`
-  UPDATE players
-  SET rating = @rating,
-      peak_rating = MAX(peak_rating, @rating),
-      games = games + 1,
-      wins = wins + @win,
-      losses = losses + @loss,
-      draws = draws + @draw
-  WHERE id = @id
+  UPDATE live_duels SET status = 'abandoned', finished_at = ? WHERE id = ? AND status = 'live'
 `)
 
 export function createMatch({
-  challengeId, aId, bId, mode = 'race', distanceM = 0, durationMs = null, aRating, bRating,
+  challengeId, aId, bId, mode = 'race', distanceM = 0, durationMs = null,
 }) {
   const match = {
     id: newId(),
@@ -122,8 +103,6 @@ export function createMatch({
     mode,
     distance_m: distanceM ?? 0,
     duration_ms: durationMs,
-    a_rating_before: aRating,
-    b_rating_before: bRating,
     started_at: now(),
   }
   insertMatch.run(match)
@@ -145,62 +124,15 @@ export function recordElapsed(matchId, side, elapsedMs) {
 }
 
 /**
- * Settle a live match and write both players' new ratings in one transaction.
- * `winnerId` may be null for a draw. Returns null if the match was already
- * settled by another caller.
+ * Settle a live duel. Live duels are social: they move no points and no
+ * hidden rating, only who won. `winnerId` may be null for a draw. Returns
+ * null if another caller settled it first.
  */
-export const settleMatch = db.transaction((matchId, winnerId) => {
-  const match = selectMatch.get(matchId)
-  if (!match || match.status !== 'live') return null
-
-  const a = selectPlayerForUpdate.get(match.a_id)
-  const b = selectPlayerForUpdate.get(match.b_id)
-  if (!a || !b) return null
-
-  const scoreA = winnerId == null ? 0.5 : winnerId === a.id ? 1 : 0
-  const result = settle(a, b, scoreA)
-
-  const changed = finishMatch.run({
-    id: matchId,
-    winner_id: winnerId ?? null,
-    finished_at: now(),
-    a_rating_after: result.a.rating,
-    b_rating_after: result.b.rating,
-  }).changes
-  if (changed !== 1) return null
-
-  applyResult.run({
-    id: a.id,
-    rating: result.a.rating,
-    win: scoreA === 1 ? 1 : 0,
-    loss: scoreA === 0 ? 1 : 0,
-    draw: scoreA === 0.5 ? 1 : 0,
-  })
-  applyResult.run({
-    id: b.id,
-    rating: result.b.rating,
-    win: scoreA === 0 ? 1 : 0,
-    loss: scoreA === 1 ? 1 : 0,
-    draw: scoreA === 0.5 ? 1 : 0,
-  })
-
-  return { match: selectMatch.get(matchId), result }
-})
+export function settleMatch(matchId, winnerId) {
+  const changed = finishMatch.run({ id: matchId, winner_id: winnerId ?? null, finished_at: now() }).changes
+  return changed === 1 ? { match: selectMatch.get(matchId) } : null
+}
 
 export function abandon(matchId) {
   return abandonMatch.run(now(), matchId).changes === 1
-}
-
-export function recentMatchesFor(playerId, limit = 20) {
-  return db
-    .prepare(
-      `SELECT m.*, pa.display_name AS a_name, pb.display_name AS b_name
-       FROM matches m
-       JOIN players pa ON pa.id = m.a_id
-       JOIN players pb ON pb.id = m.b_id
-       WHERE (m.a_id = ? OR m.b_id = ?) AND m.status = 'finished'
-       ORDER BY m.finished_at DESC
-       LIMIT ?`
-    )
-    .all(playerId, playerId, limit)
 }
