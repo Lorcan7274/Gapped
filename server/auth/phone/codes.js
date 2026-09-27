@@ -1,7 +1,7 @@
-import { db, now } from './index.js'
-import { newId, newAuthCode, safeEqual } from '../lib/ids.js'
-import { hashCode } from '../lib/phone.js'
-import { AUTH_CODE_TTL_MS } from '../config.js'
+import { db, now } from '../../db/index.js'
+import { newId, newAuthCode, safeEqual } from '../../lib/ids.js'
+import { hashCode } from './numbers.js'
+import { AUTH_CODE_TTL_MS } from '../../config/env.js'
 
 // One code every cooldown, a handful per hour, five guesses per code. Keeps
 // a stranger from using request-code as an SMS cannon or brute-forcing six

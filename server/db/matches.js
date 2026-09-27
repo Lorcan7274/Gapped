@@ -1,7 +1,7 @@
 import { db, now } from './index.js'
 import { newId } from '../lib/ids.js'
 import { settle } from '../lib/elo.js'
-import { CHALLENGE_TTL_MS } from '../config.js'
+import { CHALLENGE_TTL_MS } from '../config/env.js'
 
 /* ---------------------------------------------------------------- challenges */
 

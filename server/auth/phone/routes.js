@@ -1,15 +1,20 @@
-import { normalisePhone } from '../lib/phone.js'
-import { sendCode } from '../lib/sms.js'
-import { AUTH_CODE_ECHO } from '../config.js'
-import { normaliseDisplayName, normaliseCoords } from '../lib/validate.js'
-import { selfPlayer } from '../lib/serialize.js'
-import {
-  createPlayer, getPlayer, getPlayerByPhone, attachPhone, hasPhone, rankOf,
-} from '../db/players.js'
-import { issueCode, checkCode, consumeCodes } from '../db/authCodes.js'
-import { createSession, destroySession } from '../db/sessions.js'
+import { db } from '../../db/index.js'
+import { AUTH_CODE_ECHO } from '../../config/env.js'
+import { normalisePhone } from './numbers.js'
+import { sendCode } from './sms.js'
+import { issueCode, checkCode, consumeCodes } from './codes.js'
+import { createSession } from '../sessions.js'
+import { playerIdFor, linkIdentity } from '../identities.js'
 
-export default function authRoutes(broadcastPlayers) {
+const PROVIDER = 'phone'
+const isConstraint = (error) => String(error?.code || '').startsWith('SQLITE_CONSTRAINT')
+
+/**
+ * Sign-in by phone: a texted six-digit code proves the number, and the number
+ * picks the account. The hooks come from auth/index.js — this provider never
+ * reaches into game tables itself.
+ */
+export default function phoneRoutes({ createPlayer, describePlayer, onPlayerCreated }) {
   return async function routes(app) {
     /**
      * Step one: ask for a code. The same endpoint serves signing up and
@@ -45,17 +50,16 @@ export default function authRoutes(broadcastPlayers) {
       return {
         ok: true,
         ttlSeconds: Math.round(issued.ttlMs / 1000),
-        // No SMS provider is wired, so outside production the code rides
-        // back in the response to keep the flow usable. See lib/sms.js.
+        // Development only: the code rides back in the response so sign-in
+        // works with no SMS provider. config/env.js keeps this off in
+        // production.
         ...(AUTH_CODE_ECHO ? { devCode: issued.code } : {}),
       }
     })
 
     /**
-     * Step two: the code proves the number, and the number picks the
-     * account. In order: an account already owning it signs in; otherwise
-     * the anonymous account this device is playing as claims it; otherwise
-     * a new account is created, which needs a display name.
+     * Step two: the code proves the number. An account already linked to it
+     * signs in; otherwise a new account is created, which needs a name.
      */
     app.post('/api/auth/verify', async (request, reply) => {
       const phone = normalisePhone(request.body?.phone)
@@ -87,72 +91,49 @@ export default function authRoutes(broadcastPlayers) {
         })
       }
 
-      const signIn = (player, statusCode = 200) => {
+      const signIn = (playerId, statusCode = 200) => {
         consumeCodes(phone)
         return reply.code(statusCode).send({
-          token: createSession(player.id),
-          player: selfPlayer(player, { rank: rankOf(player.id) }),
+          token: createSession(playerId),
+          player: describePlayer(playerId),
         })
       }
 
-      const existing = getPlayerByPhone(phone)
+      const existing = playerIdFor(PROVIDER, phone)
       if (existing) {
-        request.log.info({ playerId: existing.id }, 'signed in by phone')
+        request.log.info({ playerId: existing }, 'signed in by phone')
         return signIn(existing)
       }
 
-      const claimId = request.body?.claimPlayerId
-      const claimable = claimId ? getPlayer(claimId) : null
-      if (claimable && !hasPhone(claimable.id)) {
-        try {
-          attachPhone(claimable.id, phone)
-        } catch (error) {
-          // Raced by another verify for the same number; that one owns it.
-          if (String(error?.code || '').startsWith('SQLITE_CONSTRAINT')) {
-            const winner = getPlayerByPhone(phone)
-            if (winner) return signIn(winner)
-          }
-          throw error
-        }
-        request.log.info({ playerId: claimable.id }, 'attached phone to existing player')
-        broadcastPlayers()
-        return signIn(getPlayer(claimable.id))
+      // The player and its identity are created together: if another verify
+      // for the same number wins the race, this one rolls back whole and
+      // signs into the winner instead.
+      let created
+      try {
+        created = db.transaction(() => {
+          const playerId = createPlayer({ displayName: request.body?.displayName })
+          if (!playerId) return null
+          linkIdentity(PROVIDER, phone, playerId)
+          return playerId
+        })()
+      } catch (error) {
+        const winner = isConstraint(error) ? playerIdFor(PROVIDER, phone) : null
+        if (winner) return signIn(winner)
+        throw error
       }
 
       // The code is deliberately not consumed on this refusal, so adding a
       // name and resubmitting the same code succeeds.
-      const displayName = normaliseDisplayName(request.body?.displayName)
-      if (!displayName) {
+      if (!created) {
         return reply.code(400).send({
           error: 'No account uses that number yet. Pick a name to create one.',
           code: 'name_required',
         })
       }
 
-      const coords = normaliseCoords(request.body?.lat, request.body?.lng)
-      let player
-      try {
-        player = createPlayer({
-          displayName,
-          phone,
-          lat: coords?.lat ?? null,
-          lng: coords?.lng ?? null,
-        })
-      } catch (error) {
-        if (String(error?.code || '').startsWith('SQLITE_CONSTRAINT')) {
-          const winner = getPlayerByPhone(phone)
-          if (winner) return signIn(winner)
-        }
-        throw error
-      }
-      request.log.info({ playerId: player.id }, 'registered by phone')
-      broadcastPlayers()
-      return signIn(player, 201)
-    })
-
-    app.post('/api/auth/logout', async (request) => {
-      destroySession(request.headers.authorization?.replace(/^Bearer\s+/i, ''))
-      return { ok: true }
+      request.log.info({ playerId: created }, 'registered by phone')
+      onPlayerCreated?.(created)
+      return signIn(created, 201)
     })
   }
 }

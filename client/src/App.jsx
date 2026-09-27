@@ -44,7 +44,7 @@ export default function App() {
     )
   }
 
-  if (status === 'anonymous') return <Onboarding />
+  if (status === 'signed-out') return <Onboarding />
 
   // A live duel owns the whole screen.
   if (match) {

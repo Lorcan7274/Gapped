@@ -1,6 +1,6 @@
 import {
   IS_PRODUCTION, TEXTBEE_API_KEY, TEXTBEE_DEVICE_ID,
-} from '../config.js'
+} from '../../config/env.js'
 
 const TEXTBEE_SEND_URL = 'https://api.textbee.dev/api/v1/gateway/send-sms'
 

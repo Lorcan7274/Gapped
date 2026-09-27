@@ -1,127 +1,13 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { useSession } from '../state/session.jsx'
-import { usePhoneAuth } from '../lib/usePhoneAuth.js'
-import {
-  detectCountry, rememberCountry, toE164, isCompleteNumber,
-} from '../lib/countries.js'
 import { clock, distanceLabel, daysAgo } from '../lib/format.js'
 import { Shard } from '../components/Crystal.jsx'
-import PhoneField from '../components/PhoneField.jsx'
-import { Button, Label, Rule, Spinner } from '../components/ui.jsx'
+import { Button, Label, Spinner } from '../components/ui.jsx'
 
 const field =
   'min-h-[56px] w-full border-b border-ink bg-transparent pb-2 text-[17px] ' +
   'font-700 text-ink placeholder:text-muted focus:outline-none'
-
-/**
- * An account with no verified number lives entirely in this browser's
- * localStorage — leaving deletes it, clearing the browser loses it. Proving
- * a phone number attaches it to the account you already are, rating and all.
- */
-function SecureAccount({ player, setNotice }) {
-  const [open, setOpen] = useState(false)
-  const {
-    stage, phone, setPhone, code, setCode,
-    busy, error, devCode, resendIn, request, verify, back,
-  } = usePhoneAuth()
-  const [country, setCountry] = useState(detectCountry)
-  const [national, setNational] = useState('')
-
-  const phoneReady = isCompleteNumber(phone)
-
-  function changeCountry(next) {
-    setCountry(next)
-    rememberCountry(next)
-    setPhone(toE164(next, national))
-  }
-  function changeNational(next) {
-    setNational(next)
-    setPhone(toE164(country, next))
-  }
-
-  async function submitNumber(event) {
-    event.preventDefault()
-    if (phoneReady) request()
-  }
-
-  async function submitCode(event) {
-    event.preventDefault()
-    // The claim carries this account's id, so the name is only a fallback.
-    const err = await verify({ displayName: player.displayName })
-    if (!err) setNotice({ tone: 'good', text: 'Number verified. Sign in anywhere to pick this account up.' })
-  }
-
-  return (
-    <div className="mt-8">
-      <Rule />
-      <div className="pt-4">
-        <Label className="text-garnet">This account is tied to this device</Label>
-        <p className="mt-2 text-[15px] leading-relaxed text-slate">
-          Verify your phone number and your rating follows you anywhere.
-        </p>
-        {!open ? (
-          <Button variant="outline" className="mt-4" onClick={() => setOpen(true)}>
-            Secure account
-          </Button>
-        ) : stage === 'number' ? (
-          <form onSubmit={submitNumber} className="mt-4 flex flex-col gap-4">
-            <PhoneField
-              size="md"
-              country={country}
-              onCountry={changeCountry}
-              national={national}
-              onNational={changeNational}
-              autoFocus
-            />
-            {error && <p className="text-[13px] text-garnet">{error}</p>}
-            <Button type="submit" disabled={busy || !phoneReady}>
-              {busy ? 'Sending…' : 'Text me a code'}
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={submitCode} className="mt-4 flex flex-col gap-4">
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern="[0-9]*"
-              maxLength={6}
-              required
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              placeholder="000000"
-              aria-label="Six-digit code"
-              className={`nums ${field} text-center text-[24px] tracking-[0.4em]`}
-            />
-            {devCode && (
-              <p className="nums text-[13px] text-muted">
-                No SMS provider in dev — your code is {devCode}
-              </p>
-            )}
-            {error && <p className="text-[13px] text-garnet">{error}</p>}
-            <Button type="submit" disabled={busy || code.length !== 6}>
-              {busy ? 'Checking…' : 'Verify number'}
-            </Button>
-            <div className="flex items-center justify-between">
-              <button type="button" onClick={back} className="label min-h-[56px] text-muted">
-                Wrong number?
-              </button>
-              <button
-                type="button"
-                onClick={request}
-                disabled={busy || resendIn > 0}
-                className="label min-h-[56px] text-muted disabled:opacity-40"
-              >
-                {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-  )
-}
 
 export default function Profile({ settingsOpen = false }) {
   const { player, setNotice } = useSession()
@@ -137,7 +23,6 @@ export default function Profile({ settingsOpen = false }) {
   if (!player) return null
   if (settingsOpen) return <Settings player={player} setNotice={setNotice} />
 
-  const anonymous = player.hasAccount === false
   // Oldest first, and only duels that actually moved the rating.
   const settled = (matches ?? [])
     .filter((m) => m.you.ratingAfter != null && m.you.ratingBefore != null)
@@ -184,8 +69,6 @@ export default function Profile({ settingsOpen = false }) {
           </ul>
         )}
       </div>
-
-      {anonymous && <SecureAccount player={player} setNotice={setNotice} />}
     </div>
   )
 }
@@ -316,8 +199,6 @@ function Settings({ player, setNotice }) {
   const [name, setName] = useState(player.displayName)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const anonymous = player.hasAccount === false
-
   async function save(event) {
     event.preventDefault()
     const next = name.trim()
@@ -382,24 +263,11 @@ function Settings({ player, setNotice }) {
       </div>
 
       <div className="mt-10 border-t border-rule">
-        {player.phone && (
-          <p className="nums mt-4 text-[13px] text-muted">Verified as {player.phone}</p>
+        {player.verifiedAs && (
+          <p className="nums mt-4 text-[13px] text-muted">Verified as {player.verifiedAs}</p>
         )}
-        <Button
-          variant="quiet"
-          className="mt-4"
-          onClick={() => {
-            if (
-              !anonymous ||
-              confirm(
-                'This account has no verified number. Leaving deletes it — rating, record, all of it. Leave anyway?'
-              )
-            ) {
-              leave()
-            }
-          }}
-        >
-          {anonymous ? 'Leave' : 'Sign out'}
+        <Button variant="quiet" className="mt-4" onClick={leave}>
+          Sign out
         </Button>
       </div>
     </div>

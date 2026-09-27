@@ -1,7 +1,6 @@
 import { normaliseDisplayName, normaliseCoords } from '../lib/validate.js'
 import { selfPlayer } from '../lib/serialize.js'
 import {
-  createPlayer,
   setLocation,
   renamePlayer,
   rankOf,
@@ -12,39 +11,9 @@ import { publicPlayer } from '../lib/serialize.js'
 export default function joinRoutes(broadcastPlayers) {
   return async function routes(app) {
     /**
-     * Join. Creates a player and hands back the record the client keeps in
-     * localStorage — the id in it is the credential for every later call.
-     * Coordinates are optional: a denied permission still joins.
-     */
-    app.post('/api/join', async (request, reply) => {
-      const displayName = normaliseDisplayName(request.body?.displayName)
-      if (!displayName) {
-        return reply
-          .code(400)
-          .send({ error: 'Pick a name between 2 and 24 characters.' })
-      }
-
-      const coords = normaliseCoords(request.body?.lat, request.body?.lng)
-      const player = createPlayer({
-        displayName,
-        lat: coords?.lat ?? null,
-        lng: coords?.lng ?? null,
-      })
-
-      request.log.info(
-        { playerId: player.id, located: Boolean(coords) },
-        'player joined'
-      )
-      // Everyone already on the home screen should see the new arrival.
-      broadcastPlayers()
-
-      return reply.code(201).send({ player: selfPlayer(player, { rank: rankOf(player.id) }) })
-    })
-
-    /**
-     * Re-hydrate a stored player on reload. A stale id (database reset, or a
-     * player removed) returns 404 so the client can clear localStorage and
-     * send the person back to the join screen instead of hanging.
+     * Re-hydrate the signed-in player on reload. A dead session (expired,
+     * signed out, or the player removed) returns 404 so the client can clear
+     * storage and show sign-in again instead of hanging.
      */
     app.get('/api/me', { preHandler: app.requirePlayer }, async (request) => ({
       player: selfPlayer(request.player, { rank: rankOf(request.player.id) }),
@@ -83,7 +52,7 @@ export default function joinRoutes(broadcastPlayers) {
 
     /** Everyone who has joined. The socket pushes this same shape on change. */
     app.get('/api/players', async (request) => {
-      // Resolved like every other route, so a forged x-player-id cannot
+      // Resolved from the session like every other route, so nobody can
       // read the list from another player's perspective.
       const viewer = app.resolvePlayer(request)
       return {

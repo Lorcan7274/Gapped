@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getCurrentPosition } from '../lib/tracker.js'
 import { usePhoneAuth } from '../lib/usePhoneAuth.js'
 import {
   DIAL, detectCountry, rememberCountry, toE164, isCompleteNumber, formatNational,
@@ -208,10 +207,7 @@ export default function Onboarding() {
     if (!nameReady || busy || pendingName) return
     setPendingName(true)
     try {
-      // Ask for location so the new account lands on the map, but never let
-      // a refusal block it.
-      const coords = await getCurrentPosition().catch(() => null)
-      const err = await verify({ displayName: collapsedName, coords })
+      const err = await verify({ displayName: collapsedName })
       if (err && CODE_ERRORS.has(err.code)) {
         // The code died while they typed — back to the code step to explain.
         setNeedName(false)

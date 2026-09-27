@@ -62,25 +62,28 @@ export function SessionProvider({ children }) {
     api('/api/meta').then(setMeta).catch(() => {})
   }, [])
 
-  // Revalidate the stored player on boot. A 404 means the id is dead (the
-  // database was reset, say) so we clear it rather than hang on a dead id.
+  // Revalidate the stored session on boot. A 404 means it is dead (expired,
+  // signed out elsewhere, or the database was reset) so we clear it rather
+  // than hang on it.
   const forget = useCallback(() => {
     writePlayer(null)
     writeToken(null)
     setToken(null)
     setPlayer(null)
     setPlayers([])
-    setStatus('anonymous')
+    setStatus('signed-out')
   }, [])
 
   useEffect(() => {
-    if (!playerId) {
-      setStatus('anonymous')
+    // A stored player without a token is from before sign-in was the only
+    // way in; the id alone opens nothing, so start over at sign-in.
+    if (!playerId || !token) {
+      forget()
       return
     }
     let cancelled = false
     setStatus('loading')
-    api('/api/me', { playerId })
+    api('/api/me')
       .then((data) => {
         if (cancelled) return
         setPlayer(data.player)
@@ -97,7 +100,7 @@ export function SessionProvider({ children }) {
     return () => {
       cancelled = true
     }
-  }, [playerId, forget])
+  }, [playerId, token, forget])
 
   /* ----------------------------------------------------------------- socket */
 
@@ -107,7 +110,7 @@ export function SessionProvider({ children }) {
    */
   const recoverResult = useCallback(async (stale) => {
     try {
-      const { matches } = await api('/api/me/matches', { playerId: readPlayer()?.id })
+      const { matches } = await api('/api/me/matches')
       const m = matches?.find((row) => row.id === stale.id)
       if (!m) {
         setNotice({ tone: 'bad', text: 'That duel ended while you were offline.' })
@@ -315,9 +318,8 @@ export function SessionProvider({ children }) {
   }, [recoverResult, teardownCall, openCall])
 
   useEffect(() => {
-    if (!playerId || status !== 'ready') return
+    if (!token || status !== 'ready') return
     const socket = createSocket({
-      playerId,
       token,
       onMessage,
       onStatus: setConnection,
@@ -329,7 +331,7 @@ export function SessionProvider({ children }) {
       socketRef.current = null
       setConnection('closed')
     }
-  }, [playerId, token, status, onMessage, forget])
+  }, [token, status, onMessage, forget])
 
   const send = useCallback((type, payload) => socketRef.current?.send(type, payload) ?? false, [])
 
@@ -455,19 +457,13 @@ export function SessionProvider({ children }) {
   )
 
   /**
-   * Step two: the code proves the number and signs into whichever account
-   * owns it — carrying over an anonymous player from this device if the
-   * number is new.
+   * Step two: the code proves the number and signs into the account linked
+   * to it, or creates one — which needs a display name.
    */
-  const verifyPhone = useCallback(async ({ phone, code, displayName, coords }) => {
+  const verifyPhone = useCallback(async ({ phone, code, displayName }) => {
     const res = await api('/api/auth/verify', {
       method: 'POST',
-      body: {
-        phone, code,
-        displayName: displayName ?? null,
-        lat: coords?.lat ?? null, lng: coords?.lng ?? null,
-        claimPlayerId: readPlayer()?.id ?? null,
-      },
+      body: { phone, code, displayName: displayName ?? null },
     })
     return adopt(res.token, res.player)
   }, [adopt])
@@ -476,7 +472,7 @@ export function SessionProvider({ children }) {
   const pushLocation = useCallback(async (coords) => {
     if (!playerId || !coords) return null
     const { player: updated } = await api('/api/location', {
-      method: 'POST', playerId, body: coords,
+      method: 'POST', body: coords,
     })
     setPlayer(updated)
     writePlayer(updated)
@@ -488,7 +484,7 @@ export function SessionProvider({ children }) {
   const rename = useCallback(async (displayName) => {
     if (!playerId) return null
     const { player: updated } = await api('/api/me/name', {
-      method: 'PATCH', playerId, body: { displayName },
+      method: 'PATCH', body: { displayName },
     })
     setPlayer(updated)
     writePlayer(updated)

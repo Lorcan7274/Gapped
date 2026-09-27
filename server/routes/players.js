@@ -2,7 +2,7 @@ import {
   DISCOVERY_RADIUS_M,
   DISCOVERY_RATING_SPREAD,
   PRESENCE_TTL_MS,
-} from '../config.js'
+} from '../config/env.js'
 import { publicPlayer, selfPlayer, publicMatch } from '../lib/serialize.js'
 import { findNearby, leaderboard, rankOf, getPlayer } from '../db/players.js'
 import { recentMatchesFor, getLiveMatchFor } from '../db/matches.js'

@@ -1,6 +1,11 @@
-import { db, now } from './index.js'
+import { db, now } from '../db/index.js'
 import { newToken } from '../lib/ids.js'
-import { SESSION_TTL_MS } from '../config.js'
+import { SESSION_TTL_MS } from '../config/env.js'
+
+/**
+ * Sign-in issues an opaque token, and the token is the only credential — a
+ * player id on its own proves nothing.
+ */
 
 const insert = db.prepare(
   'INSERT INTO sessions (token, player_id, created_at, expires_at) VALUES (?, ?, ?, ?)'
@@ -16,7 +21,8 @@ export function createSession(playerId) {
   return token
 }
 
-export function resolveSession(token) {
+/** The player a live session belongs to; an expired session is deleted on sight. */
+export function sessionPlayerId(token) {
   if (!token) return null
   const session = select.get(token)
   if (!session) return null
@@ -24,7 +30,7 @@ export function resolveSession(token) {
     remove.run(token)
     return null
   }
-  return session
+  return session.player_id
 }
 
 export const destroySession = (token) => token && remove.run(token)

@@ -12,15 +12,12 @@ const selectById = db.prepare(`SELECT ${COLUMNS} FROM players WHERE id = ?`)
 
 const insertPlayer = db.prepare(`
   INSERT INTO players
-    (id, display_name, phone, rating, peak_rating,
+    (id, display_name, rating, peak_rating,
      lat, lng, located_at, created_at, last_seen_at)
   VALUES
-    (@id, @display_name, @phone, @rating, @rating,
+    (@id, @display_name, @rating, @rating,
      @lat, @lng, @located_at, @created_at, @created_at)
 `)
-
-const selectByPhone = db.prepare('SELECT id FROM players WHERE phone = ?')
-const attachNumber = db.prepare('UPDATE players SET phone = ? WHERE id = ?')
 
 const updateLocation = db.prepare(`
   UPDATE players SET lat = ?, lng = ?, located_at = ?, last_seen_at = ? WHERE id = ?
@@ -31,38 +28,15 @@ const rename = db.prepare('UPDATE players SET display_name = ? WHERE id = ?')
 export const getPlayer = (id) => (id ? selectById.get(id) ?? null : null)
 
 /**
- * Create a player from a display name. Coordinates are optional — a browser
- * that denies location still joins, just without a position.
+ * Create a player from a display name. How they sign in is not the player's
+ * business — auth links its own identity to the new id. Coordinates are
+ * optional; a browser that denies location still plays.
  */
-const selectPhone = db.prepare('SELECT phone FROM players WHERE id = ?')
-
-/**
- * The verified number on an account. The public row deliberately omits it —
- * other players never see a phone number — so a caller has to ask.
- */
-export const phoneOf = (id) => (id ? selectPhone.get(id)?.phone ?? null : null)
-
-/** Whether this account has a verified number, i.e. a real credential. */
-export const hasPhone = (id) => Boolean(phoneOf(id))
-
-/** The account that owns a number, if any. */
-export const getPlayerByPhone = (phone) =>
-  phone ? getPlayer(selectByPhone.get(phone)?.id) : null
-
-/** Give an existing account a verified number without losing its rating. */
-export function attachPhone(id, phone) {
-  attachNumber.run(phone, id)
-  return getPlayer(id)
-}
-
-export function createPlayer({
-  displayName, phone = null, lat = null, lng = null,
-}) {
+export function createPlayer({ displayName, lat = null, lng = null }) {
   const hasCoords = lat != null && lng != null
   const player = {
     id: newId(),
     display_name: displayName,
-    phone,
     rating: STARTING_RATING,
     lat: hasCoords ? lat : null,
     lng: hasCoords ? lng : null,

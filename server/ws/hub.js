@@ -6,7 +6,6 @@ import {
   touchPlayer,
   rankOf,
   allPlayers,
-  hasPhone,
 } from '../db/players.js'
 import {
   createChallenge,
@@ -30,9 +29,9 @@ import {
 } from '../lib/validate.js'
 import {
   DISCOVERY_RADIUS_M, DISCOVERY_RATING_SPREAD, PRESENCE_TTL_MS, ICE_SERVERS,
-} from '../config.js'
+} from '../config/env.js'
 import { db } from '../db/index.js'
-import { resolveSession } from '../db/sessions.js'
+import { playerIdForToken } from '../auth/index.js'
 
 // Both runners get a shared countdown so neither starts early.
 const COUNTDOWN_MS = 5_000
@@ -749,28 +748,16 @@ export function createHub(log) {
       return
     }
 
-    // The player id from localStorage is the credential. A stale one (the
-    // database was reset, say) is refused so the client can clear it and
-    // send the person back to the join screen.
-    const token = url.searchParams.get('token')
-    const session = token ? resolveSession(token) : null
-    let player = session ? getPlayer(session.player_id) : null
-
-    if (!player) {
-      // Same legacy allowance as the HTTP side: a bare id still works for an
-      // account that has never had a verified number attached.
-      const legacy = getPlayer(
-        url.searchParams.get('playerId') ||
-        request.headers['sec-websocket-protocol'] || ''
-      )
-      if (legacy && !hasPhone(legacy.id)) player = legacy
-    }
+    // The session token is the credential, as on the HTTP side. A dead one
+    // (expired, signed out, player removed) is refused so the client can
+    // clear it and show sign-in again.
+    const player = getPlayer(playerIdForToken(url.searchParams.get('token')))
 
     if (!player) {
       // Complete the handshake, then close with policy code 1008. A raw 401
       // surfaces in the browser as an anonymous 1006, so the client could
-      // never tell "server is down" from "this id is dead" and would retry a
-      // dead credential forever.
+      // never tell "server is down" from "this session is dead" and would
+      // retry a dead credential forever.
       wss.handleUpgrade(request, socket, head, (ws) => {
         ws.close(1008, 'unknown player')
       })

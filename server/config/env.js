@@ -57,10 +57,30 @@ export const TEXTBEE_API_KEY = process.env.TEXTBEE_API_KEY || null
 // device, or the enabled one heard from most recently.
 export const TEXTBEE_DEVICE_ID = process.env.TEXTBEE_DEVICE_ID || null
 
-// Whether the verification code is echoed in the request-code response.
-// Defaults to on outside production so sign-in works with no SMS provider;
-// force it with AUTH_CODE_ECHO=1 for a demo deploy, knowing anyone can then
-// sign in as any number.
-export const AUTH_CODE_ECHO = process.env.AUTH_CODE_ECHO != null
-  ? ['1', 'true'].includes(process.env.AUTH_CODE_ECHO)
-  : !IS_PRODUCTION
+/**
+ * Whether the verification code is echoed in the request-code response, so
+ * sign-in works in development with no SMS provider. On by default outside
+ * production, and never on in production: echoing there would let anyone
+ * sign in as any number. Asking for it in production is a misconfiguration,
+ * so the process refuses to start rather than quietly run one way or the
+ * other. (Nixpacks, which builds the Railway deploy, sets
+ * NODE_ENV=production.)
+ */
+export function resolveAuthCodeEcho({ isProduction, requested }) {
+  const asked = requested == null
+    ? null
+    : ['1', 'true'].includes(String(requested).trim().toLowerCase())
+  if (isProduction && asked) {
+    throw new Error(
+      'AUTH_CODE_ECHO is set in production. Echoing sign-in codes lets anyone sign in ' +
+      'as any number — unset it and configure TEXTBEE_API_KEY instead.'
+    )
+  }
+  if (isProduction) return false
+  return asked ?? true
+}
+
+export const AUTH_CODE_ECHO = resolveAuthCodeEcho({
+  isProduction: IS_PRODUCTION,
+  requested: process.env.AUTH_CODE_ECHO,
+})
