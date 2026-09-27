@@ -121,3 +121,79 @@ export const SEASON = Object.freeze({
   // The most one reset may shift the scale, in rating points.
   reanchorMaxShift: 100,
 })
+
+/** The game's calendar: days, weeks (Monday to Sunday night) and streaks. */
+export const CALENDAR = Object.freeze({
+  timeZone: 'Europe/Dublin',
+})
+
+/**
+ * The visible ladder: tiers, each split into divisions (Gold III → Gold I).
+ * Divisions per tier adapt to the population — one while the game is small,
+ * so pools fill, rising toward 3–5 at scale. Pools and promotion arrive in
+ * phase 4; until then everyone sits where the migration seeded them.
+ */
+export const LADDER = Object.freeze({
+  tiers: Object.freeze([
+    Object.freeze({ key: 'bronze', name: 'Bronze', colour: '#b2724a' }),
+    Object.freeze({ key: 'silver', name: 'Silver', colour: '#9aa7b4' }),
+    Object.freeze({ key: 'gold', name: 'Gold', colour: '#c8a233' }),
+    Object.freeze({ key: 'sapphire', name: 'Sapphire', colour: '#4f46e5' }),
+    Object.freeze({ key: 'amethyst', name: 'Amethyst', colour: '#8b5cf6' }),
+    Object.freeze({ key: 'diamond', name: 'Diamond', colour: '#6aa8ff' }),
+  ]),
+  divisionsPerTier: 1,
+})
+
+/** What an uploaded run must look like before the server believes it. */
+export const TRACK = Object.freeze({
+  maxSamples: 30_000,
+  maxDurationMs: 6 * 3_600_000,
+  // An upload may arrive late (no signal at the end of a run), but not days late.
+  maxAgeMs: 7 * 86_400_000,
+  clockSkewMs: 120_000,
+  // The same filter the phone runs live (client/src/lib/tracker.js).
+  maxAccuracyM: 25,
+  maxSpeedMps: 11,
+  minStepM: 3,
+  // Plausibility flags that settle a run unranked, pending review. Richer,
+  // rating-conditioned checks arrive with anti-cheat in phase 6.
+  maxAverageSpeedMps: 6.7, // quicker than a world-record 5k, held for the whole run
+  maxRejectedShare: 0.5,
+})
+
+/**
+ * Shards: the permanent progression currency. Per run,
+ *   minutes × intensity^intensityExponent × perMinute × streak multiplier,
+ * where intensity is expected race time at your hidden rating over the
+ * distance, divided by your time — 1 is running at your race pace. So a hard
+ * short run and a long easy one both pay honestly, and a short jog pays
+ * nothing: under `minMinutes` earns zero, ramping to full at `fullMinutes`.
+ */
+export const SHARDS = Object.freeze({
+  perMinute: 1,
+  intensityExponent: 2,
+  maxIntensity: 1.2,
+  minMinutes: 10,
+  fullMinutes: 15,
+  dailyCap: 120,
+})
+
+/** Fuel: earned by running (from the Shards a run earns), spent to start fights. */
+export const FUEL = Object.freeze({
+  perShard: 0.25,
+  dailyCap: 20,
+})
+
+/** Solo runs pay a little into the weekly pool table: Shard-scaled, capped per day. */
+export const SOLO_POINTS = Object.freeze({
+  perShard: 0.1,
+  dailyCap: 8,
+})
+
+/** Streaks: consecutive days with a qualifying run; a small Shards multiplier. */
+export const STREAK = Object.freeze({
+  minMinutes: 10,
+  bonusPerDay: 0.02,
+  maxBonusDays: 6,
+})
