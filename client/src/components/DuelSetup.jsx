@@ -46,8 +46,8 @@ export default function DuelSetup({ opponent, onConfirm, onClose }) {
             className="flex min-h-[56px] w-full items-center gap-4 py-4 text-left"
           >
             <span
-              className={`size-2.5 shrink-0 rounded-full ${
-                type === option.key ? 'bg-indigo' : 'border border-muted'
+              className={`size-2.5 shrink-0 rounded-full border ${
+                type === option.key ? 'border-ink bg-ink' : 'border-muted'
               }`}
             />
             <span className="flex-1">

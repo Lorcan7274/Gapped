@@ -6,7 +6,7 @@ import { getCurrentPosition } from '../lib/tracker.js'
  * Header control for turning location on. Location is optional everywhere —
  * you can join and use the app without it — but nobody can find you to duel
  * until it is on, so while it is off this reads as a filled indigo bubble
- * that is hard to miss, and settles into a quiet outline once granted.
+ * that is hard to miss, and settles into a quiet "GPS on" once granted.
  *
  * A browser remembers a refusal and will not prompt again, so a denial says
  * what to do instead of appearing to do nothing.
@@ -36,16 +36,16 @@ export default function LocationButton() {
   }
 
   // Once location is on there is nothing to announce — the pill collapses to
-  // a quiet dot that still refreshes the fix on tap.
+  // a quiet word that still refreshes the fix on tap.
   if (on) {
     return (
       <button
         onClick={share}
         disabled={busy}
         aria-label="Location is on. Tap to refresh it."
-        className="-my-2 -mr-4 flex size-[56px] items-center justify-center transition disabled:opacity-40"
+        className="label -my-2 -mr-2 flex h-[56px] items-center px-2 text-muted transition disabled:opacity-40"
       >
-        <span className="size-2 rounded-full bg-indigo" />
+        {busy ? 'Locating' : 'GPS on'}
       </button>
     )
   }
@@ -58,7 +58,6 @@ export default function LocationButton() {
       className="label -my-2 flex min-h-[56px] items-center gap-2 rounded-full bg-indigo
                  px-4 text-paper transition disabled:opacity-50"
     >
-      <span className="size-2 shrink-0 rounded-full bg-paper" />
       {busy ? 'Locating' : 'Share location'}
     </button>
   )

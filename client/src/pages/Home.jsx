@@ -5,9 +5,10 @@ import { formatsFrom, formatDetail, challengePayload, describe } from '../lib/du
 import Crystal, { Shard } from '../components/Crystal.jsx'
 import TierLadder from '../components/TierLadder.jsx'
 import DuelSetup from '../components/DuelSetup.jsx'
+import DuelSheet from '../components/DuelSheet.jsx'
 import { Button, Label, Rule, Spinner } from '../components/ui.jsx'
 
-export default function Home() {
+export default function Home({ onLobby }) {
   const {
     player, players, meta, send, setNotice, pushLocation,
     queued, joinQueue, leaveQueue,
@@ -15,6 +16,7 @@ export default function Home() {
   const [formatKey, setFormatKey] = useState('race')
   const [ladderOpen, setLadderOpen] = useState(false)
   const [setup, setSetup] = useState(null)
+  const [duelOpen, setDuelOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -71,6 +73,10 @@ export default function Home() {
     }
   }
 
+  const caption =
+    `${selected.name ?? selected.key} · ${formatDetail(selected)} · match within ` +
+    `${meta?.discovery?.ratingSpread ?? 250} rating`
+
   function chooseFormat(key) {
     setFormatKey(key)
     // Switching format mid-search moves the search, not just the dot.
@@ -85,19 +91,19 @@ export default function Home() {
         aria-label="See all ranks"
         className="flex w-full flex-col items-center gap-1.5 pt-3 text-center"
       >
-        <Crystal size={66} tone={player.tier?.key ?? 'sapphire'} />
-        <Label className="mt-6">Rating</Label>
-        <p className="display text-[72px]">{player.rating}</p>
+        <Crystal size={62} tone={player.tier?.key ?? 'sapphire'} />
+        <Label className="mt-3">Rating</Label>
+        <p className="display num-glow text-[62px]">{player.rating}</p>
         <p className="label-13 label text-ink">{player.tier?.name}</p>
         <p className="text-[13px] text-slate">Tap for all ranks</p>
       </button>
 
       {/* Nemesis */}
-      <div className="mt-6">
+      <div className="mt-3.5">
         <Rule />
         {nemesis ? (
-          <div className="flex items-center gap-4 py-4">
-            <Shard size={22} tone="garnet" />
+          <div className="flex items-center gap-4 py-3">
+            <NemesisShard />
             <div className="min-w-0 flex-1">
               <Label className="text-garnet">Nemesis</Label>
               <p className="mt-1 truncate text-[17px] font-700 text-ink">
@@ -109,7 +115,7 @@ export default function Home() {
             </div>
             <button
               onClick={() => setSetup({ opponent: nemesis })}
-              className="btn btn-outline w-auto shrink-0 px-6 text-[13px]"
+              className="btn btn-primary w-auto shrink-0 px-6 text-[13px]"
             >
               Challenge
             </button>
@@ -135,8 +141,8 @@ export default function Home() {
               className="flex min-h-[56px] w-full items-center gap-4 py-3 text-left"
             >
               <span
-                className={`size-2.5 shrink-0 rounded-full ${
-                  activeKey === option.key ? 'bg-indigo' : 'border border-muted'
+                className={`size-2.5 shrink-0 rounded-full border ${
+                  activeKey === option.key ? 'border-ink bg-ink' : 'border-muted'
                 }`}
               />
               <span className="flex-1">
@@ -156,23 +162,27 @@ export default function Home() {
         <Rule />
       </div>
 
-      <div className="mt-auto flex flex-col gap-2.5 pt-7">
+      {/* Duel opens the split sheet: a random lobby on top, a chosen rival
+          below. While a search runs, the same spot cancels it. */}
+      <div className="mt-auto flex flex-col gap-2.5 py-3.5">
         {queued ? (
           <Button variant="outline" onClick={leaveQueue}>
             <Spinner />
             Searching · tap to cancel
           </Button>
         ) : (
-          <Button onClick={() => search(selected.key)}>
-            <span className="size-2 rounded-full bg-indigo" />
-            Find duel
-          </Button>
+          <Button onClick={() => setDuelOpen(true)}>Duel</Button>
         )}
-        <p className="text-center text-[13px] text-muted">
-          {selected.name ?? selected.key} · {formatDetail(selected)} · match within{' '}
-          {meta?.discovery?.ratingSpread ?? 250} rating
-        </p>
+        <p className="text-center text-[13px] text-muted">{caption}</p>
       </div>
+
+      <DuelSheet
+        open={duelOpen}
+        caption={caption}
+        onRandom={() => search(selected.key)}
+        onFriend={onLobby}
+        onClose={() => setDuelOpen(false)}
+      />
 
       {ladderOpen && <TierLadder onClose={() => setLadderOpen(false)} />}
       {setup && (
@@ -183,5 +193,35 @@ export default function Home() {
         />
       )}
     </div>
+  )
+}
+
+/* Crimson void-beams flashing down around the nemesis stone, each on its own
+   cycle so the pattern never visibly repeats. */
+const NEMESIS_BEAMS = [
+  { left: -11, top: '-15%', width: 2.5, height: '82%', hue: '255,77,109', peak: 0.85, glow: 4, shadow: 0.6, dur: '3.1s', delay: '0s' },
+  { left: -5, top: '6%', width: 1.5, height: '52%', hue: '255,122,162', peak: 0.8, glow: 3, shadow: 0.5, dur: '4.3s', delay: '1.4s' },
+  { left: 9, top: '-22%', width: 2, height: '44%', hue: '255,77,109', peak: 0.75, glow: 4, shadow: 0.5, dur: '2.3s', delay: '0.7s' },
+  { right: -4, top: '0%', width: 3, height: '66%', hue: '255,77,109', peak: 0.9, glow: 5, shadow: 0.6, dur: '3.7s', delay: '2.1s' },
+  { right: -10, top: '-8%', width: 1.5, height: '58%', hue: '255,122,162', peak: 0.8, glow: 3, shadow: 0.5, dur: '4.9s', delay: '3.2s' },
+]
+
+function NemesisShard() {
+  return (
+    <span className="relative block shrink-0">
+      <Shard size={22} tone="garnet" />
+      {NEMESIS_BEAMS.map((b, i) => (
+        <span
+          key={i}
+          className="gemfx gemfx--beam"
+          style={{
+            left: b.left, right: b.right, top: b.top, width: b.width, height: b.height,
+            background: `linear-gradient(180deg, rgba(${b.hue},0), rgba(${b.hue},${b.peak}) ${b.hue === '255,122,162' ? 35 : 30}%, rgba(${b.hue === '255,122,162' ? b.hue : '164,63,94'},0))`,
+            boxShadow: `0 0 ${b.glow}px rgba(${b.hue},${b.shadow})`,
+            animationDuration: b.dur, animationDelay: b.delay,
+          }}
+        />
+      ))}
+    </span>
   )
 }

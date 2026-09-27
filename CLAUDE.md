@@ -54,7 +54,14 @@ React 19 + Vite + Tailwind v4. No router: `App.jsx` switches four tabs from loca
 
 ### Design system ("Shard Mono")
 
-Swiss-minimal editorial: warm off-white paper, near-black ink, structure from 1px hairlines only — no cards, no grey fills, no shadows. Archivo, 900-weight numerals, uppercase 11–13px labels. Exactly two colours: indigo `#4F46E5` (the accent) and garnet `#A43F5E` (reserved for the nemesis and for trailing in a duel). Touch targets ≥ 56px. Units are metric everywhere. Match this before adding any new UI.
+Swiss-minimal editorial: warm off-white paper, near-black ink, structure from 1px hairlines only — no cards, no grey fills, no shadows. Archivo, 900-weight numerals, uppercase 11–13px labels. Two brand colours: indigo `#4F46E5` (the accent) and garnet `#A43F5E` (reserved for the nemesis and for trailing in a duel). Selection marks (radios, the active tab) are ink, not indigo. Primary actions are filled ink pills. Touch targets ≥ 56px. Units are metric everywhere. Match this before adding any new UI.
+
+Deliberate departures, all from the Claude Design handoff:
+
+- **Rank backgrounds.** Home sits on a live background cut for the runner's tier (`components/RankBackground.jsx`, recipes in `lib/rankBackground.js`): Bronze is CSS (ember glow + grid), the rest are self-contained WebGL custom elements in `lib/shaders/` (Silver halftone, Gold neuro-noise, Sapphire mesh drift, Amethyst fluted glass, Diamond water caustics), each lazy-loaded and each with a dark and light palette that eases across on a theme switch. While Home is showing, the shell carries `.rank-glass`, which makes rule/muted tokens translucent and frosts the tab bar. The background is `z-0` and the header/main are `relative` with no z-index — do not give them one, or Home's fixed sheets get trapped under the tab bar.
+- **Duel sheet.** The Duel button opens `components/DuelSheet.jsx`, driven frame by frame by `lib/duelRig.js` (damped springs for the rise, a liquid seam between the black and white halves, and the drag-up red cancel wash). Random lobby joins the quick-match queue; Challenge a friend goes to the Lobby tab.
+- **Outcome colours.** Duel history and the rating chart on You use green (`--color-win`) for wins and red (`--color-loss`) / garnet for losses; ties are muted. These colours appear nowhere else.
+- **Tier weather.** The crystal cluster carries per-tier effects (gold glints, amethyst arcs, diamond stars, garnet void-beams).
 
 The signed-out onboarding (`pages/Onboarding.jsx`, `.ob-*` styles) is the one deliberate exception: a committed-dark world — near-black, aurora gradients, its own dial pad — that ignores the paper/ink theme and ends the moment sign-in does. The tier crystals (`components/Crystal.jsx`) are generated SVG meshes, seeded per tier so every render cuts the same stone.
 

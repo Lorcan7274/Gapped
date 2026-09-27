@@ -42,3 +42,21 @@ export function ago(timestamp) {
   if (seconds < 86_400) return `${Math.round(seconds / 3600)}h ago`
   return `${Math.round(seconds / 86_400)}d ago`
 }
+
+/**
+ * Coarse calendar distance for history: Today, Yesterday, 3d ago, 2w ago,
+ * 4mo ago. Counted in local calendar days, so last night is Yesterday.
+ */
+export function daysAgo(timestamp) {
+  if (!timestamp) return ''
+  const day = (t) => {
+    const d = new Date(t)
+    return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000
+  }
+  const days = Math.max(0, day(Date.now()) - day(timestamp))
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return `${days}d ago`
+  if (days < 30) return `${Math.floor(days / 7)}w ago`
+  return `${Math.floor(days / 30)}mo ago`
+}

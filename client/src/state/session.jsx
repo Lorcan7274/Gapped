@@ -484,6 +484,17 @@ export function SessionProvider({ children }) {
     return updated
   }, [playerId, send])
 
+  /** Change the display name. Throws the server's message if it is refused. */
+  const rename = useCallback(async (displayName) => {
+    if (!playerId) return null
+    const { player: updated } = await api('/api/me/name', {
+      method: 'PATCH', playerId, body: { displayName },
+    })
+    setPlayer(updated)
+    writePlayer(updated)
+    return updated
+  }, [playerId])
+
   /** Quick match: queue for a fixed format; the server pairs and starts. */
   const joinQueue = useCallback((format) => send('queue:join', { format }), [send])
 
@@ -509,14 +520,14 @@ export function SessionProvider({ children }) {
     incoming, outgoing, match, result, opponentProgress, opponentFinished,
     queued, joinQueue, leaveQueue,
     call, startCall, acceptCall, declineCall, endCall, toggleCamera, toggleMute,
-    requestPhoneCode, verifyPhone, leave, pushLocation, send,
+    requestPhoneCode, verifyPhone, leave, pushLocation, rename, send,
     setNotice, setOutgoing, setIncoming,
     clearResult: () => setResult(null),
   }), [
     player, players, meta, status, connection, notice, incoming, outgoing,
     match, result, opponentProgress, opponentFinished, queued, joinQueue,
     leaveQueue, call, startCall, acceptCall, declineCall, endCall, toggleCamera,
-    toggleMute, requestPhoneCode, verifyPhone, leave, pushLocation, send,
+    toggleMute, requestPhoneCode, verifyPhone, leave, pushLocation, rename, send,
   ])
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

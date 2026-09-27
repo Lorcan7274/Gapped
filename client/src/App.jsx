@@ -10,6 +10,7 @@ import LocationButton from './components/LocationButton.jsx'
 import ThemeToggle from './components/ThemeToggle.jsx'
 import ChallengeSheet from './components/ChallengeSheet.jsx'
 import ResultSheet from './components/ResultSheet.jsx'
+import RankBackground from './components/RankBackground.jsx'
 import { Spinner, ConnectionStatus } from './components/ui.jsx'
 
 const TABS = [
@@ -20,8 +21,14 @@ const TABS = [
 ]
 
 export default function App() {
-  const { status, connection, match, notice, setNotice } = useSession()
+  const { player, status, connection, match, notice, setNotice } = useSession()
   const [tab, setTab] = useState('home')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  function go(key) {
+    setTab(key)
+    setSettingsOpen(false)
+  }
 
   useEffect(() => {
     if (!notice) return
@@ -61,10 +68,27 @@ export default function App() {
     )
   }
 
+  // Home floats on the rank's live background; every other tab is paper.
+  const glass = tab === 'home'
+
   return (
-    <div className="flex min-h-dvh flex-col bg-paper">
-      <header className="flex items-center justify-between border-b border-rule px-6 py-3 safe-t">
-        <span className="label-13 label text-ink">Gapped</span>
+    <div className={`flex min-h-dvh flex-col ${glass ? 'rank-glass' : 'bg-paper'}`}>
+      {glass && <RankBackground tier={player?.tier?.key} />}
+      <header className="relative flex items-center justify-between border-b border-rule px-6 py-3 safe-t">
+        {/* In a tab app the wordmark is redundant chrome on You — the gear
+            takes its place and opens Settings there instead. */}
+        {tab === 'you' ? (
+          <button
+            onClick={() => setSettingsOpen((open) => !open)}
+            aria-label={settingsOpen ? 'Close settings' : 'Settings'}
+            aria-pressed={settingsOpen}
+            className="-my-2 -ml-[17px] flex size-[56px] items-center justify-center text-ink"
+          >
+            <GearIcon />
+          </button>
+        ) : (
+          <span className="label-13 label text-ink">Gapped</span>
+        )}
         <div className="flex items-center gap-3">
           <ConnectionStatus status={connection} />
           <ThemeToggle className="-my-2" />
@@ -72,11 +96,11 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col pb-[92px]">
-        {tab === 'home' && <Home />}
+      <main className="relative flex flex-1 flex-col pb-[92px]">
+        {tab === 'home' && <Home onLobby={() => go('lobby')} />}
         {tab === 'lobby' && <Challenge />}
         {tab === 'ladder' && <Leaderboard />}
-        {tab === 'you' && <Profile />}
+        {tab === 'you' && <Profile settingsOpen={settingsOpen} />}
       </main>
 
       {/* Notices float above the tab bar instead of shoving the layout down. */}
@@ -92,20 +116,22 @@ export default function App() {
         </div>
       )}
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-[430px] flex border-t border-rule bg-paper px-2 safe-b">
+      <nav
+        className={`fixed inset-x-0 bottom-0 z-40 mx-auto max-w-[430px] flex border-t border-rule px-2 safe-b ${
+          glass ? 'glass-nav' : 'bg-paper'
+        }`}
+      >
+        {/* The active tab is marked by ink alone — no dot. */}
         {TABS.map((item) => (
           <button
             key={item.key}
-            onClick={() => setTab(item.key)}
+            onClick={() => go(item.key)}
             aria-current={tab === item.key ? 'page' : undefined}
             className={`label flex min-h-[58px] flex-1 items-center justify-center transition ${
               tab === item.key ? 'text-ink' : 'text-muted'
             }`}
           >
-            <span className="flex items-center gap-1.5">
-              {tab === item.key && <span className="size-1.5 rounded-full bg-indigo" />}
-              {item.label}
-            </span>
+            {item.label}
           </button>
         ))}
       </nav>
@@ -113,5 +139,20 @@ export default function App() {
       <ChallengeSheet />
       <ResultSheet />
     </div>
+  )
+}
+
+const GEAR_TEETH = [0, 45, 90, 135, 180, 225, 270, 315]
+
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-[21px]" aria-hidden="true">
+      <g stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+        {GEAR_TEETH.map((angle) => (
+          <line key={angle} x1="12" y1="2.6" x2="12" y2="5.2" transform={`rotate(${angle} 12 12)`} />
+        ))}
+      </g>
+      <circle cx="12" cy="12" r="4.6" fill="none" stroke="currentColor" strokeWidth="2.2" />
+    </svg>
   )
 }

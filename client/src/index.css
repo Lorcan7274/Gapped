@@ -2,9 +2,10 @@
 
 /* ------------------------------------------------------------------ Shard Mono
    Swiss-minimal editorial base. Structure comes from 1px rules and white
-   space — no cards, no grey fills, no shadows. Exactly one accent (indigo),
-   plus garnet reserved for the nemesis. The crystal is the only
-   non-typographic element in the app.
+   space — no cards, no grey fills, no shadows. One accent (indigo), plus
+   garnet reserved for the nemesis. The deliberate exceptions — Home's rank
+   background, the Duel sheet, outcome colours on You — are listed in
+   CLAUDE.md.
    -------------------------------------------------------------------------- */
 
 @theme {
@@ -17,6 +18,9 @@
   --color-garnet: #a43f5e;
   /* The accent as it reads on an ink surface (the "you" row of the ladder). */
   --color-indigo-soft: #a5a0f5;
+  /* Outcome colours for duel history and the rating chart only. */
+  --color-win: #2e9e5b;
+  --color-loss: #d64545;
 
   --font-sans: 'Archivo', ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
@@ -272,6 +276,166 @@ html.theme-transition *:not(.theme-toggle, .theme-toggle *)::after {
 @keyframes stage-in {
   from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: none; }
+}
+
+/* ------------------------------------------------------------ rank glass
+   Home floats on a live background cut for the runner's tier (see
+   RankBackground.jsx). Over it the tokens go translucent — rules and muted
+   type let the field through — and the tab bar frosts instead of filling. */
+
+.rank-glass {
+  --color-slate: #4b4945;
+  --color-muted: rgba(16, 16, 16, 0.55);
+  --color-rule: rgba(16, 16, 16, 0.16);
+  --knob: #e4e2dc;
+  --navbg: rgba(251, 248, 246, 0.55);
+  --numshadow: 0 2px 24px rgba(2, 1, 10, 0);
+}
+html[data-theme='dark'] .rank-glass {
+  --color-paper: #0a0918;
+  --color-slate: rgba(243, 242, 236, 0.72);
+  --color-muted: rgba(243, 242, 236, 0.55);
+  --color-rule: rgba(243, 242, 236, 0.2);
+  --color-garnet: #ff7aa2;
+  --knob: #3a3947;
+  --navbg: rgba(2, 1, 10, 0.42);
+  --numshadow: 0 2px 24px rgba(2, 1, 10, 0.6);
+}
+.rank-glass .theme-toggle__knob { background: var(--knob); }
+.rank-glass .theme-toggle__bite { fill: var(--knob); }
+.rank-glass .glass-nav {
+  background: var(--navbg);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.rank-glass .num-glow { text-shadow: var(--numshadow); }
+
+.rank-bg { transition: background-color 0.6s ease; }
+.rank-bg__veil {
+  position: absolute;
+  inset: 0;
+  transition: opacity 0.6s ease;
+}
+.rank-bg__ember {
+  position: absolute;
+  inset: -80px;
+  filter: blur(24px);
+  animation: bronze-drift 7s ease-in-out infinite alternate;
+}
+@keyframes bronze-drift {
+  from { transform: translate(-48px, -30px) scale(1); }
+  to   { transform: translate(48px, 34px) scale(1.14); }
+}
+
+/* ----------------------------------------------------------- duel sheet
+   Geometry only; every frame of motion is written by lib/duelRig.js. */
+
+.duel-sheet__body {
+  position: absolute;
+  inset: 0;
+  transform: translateY(120%);
+  will-change: transform;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.duel-sheet__title {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+}
+.duel-sheet__friend {
+  position: absolute;
+  inset: 30% 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 150px 0 90px;
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+.duel-sheet__random {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  will-change: transform;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding-top: 36px;
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+/* The dome that leads the black up as it rises. */
+.duel-sheet__random::before {
+  content: '';
+  position: absolute;
+  left: -12%;
+  right: -12%;
+  top: -44px;
+  height: 88px;
+  border-radius: 50%;
+  background: var(--color-ink);
+}
+.duel-sheet__random > * { position: relative; }
+.duel-sheet__wave {
+  position: absolute !important;
+  left: 0;
+  right: 0;
+  bottom: -38px;
+  width: 100%;
+  height: 40px;
+  overflow: visible;
+  pointer-events: none;
+  fill: var(--color-ink);
+}
+.duel-sheet__bleed {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 150px;
+  pointer-events: none;
+  background: radial-gradient(130% 100% at 50% 100%, rgba(207, 95, 130, 0.5), rgba(164, 63, 94, 0.16) 45%, rgba(164, 63, 94, 0) 72%);
+  animation: bleed-pulse 2.6s ease-in-out infinite alternate;
+}
+.duel-sheet__cancel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 40px 0 calc(34px + env(safe-area-inset-bottom));
+  color: var(--color-garnet);
+  cursor: grab;
+  touch-action: none;
+}
+.duel-sheet__chevron {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: swipe-bob 1.6s ease-in-out infinite;
+}
+@keyframes bleed-pulse {
+  from { opacity: 0.65; }
+  to   { opacity: 1; }
+}
+@keyframes swipe-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
 }
 
 /* ----------------------------------------------------------------- onboarding
@@ -616,7 +780,8 @@ html.theme-transition *:not(.theme-toggle, .theme-toggle *)::after {
 
 @media (prefers-reduced-motion: reduce) {
   .gem, .gem__gleam, .gem__shadow, .toast-in, .stage-in,
-  .gemfx--twinkle, .gemfx--arc, .gemfx--beam, .ob-caret {
+  .gemfx--twinkle, .gemfx--arc, .gemfx--beam, .ob-caret,
+  .rank-bg__ember, .duel-sheet__bleed, .duel-sheet__chevron {
     animation: none;
   }
   .gem,
