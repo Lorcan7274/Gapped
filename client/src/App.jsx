@@ -142,17 +142,31 @@ export default function App() {
   )
 }
 
-const GEAR_TEETH = [0, 45, 90, 135, 180, 225, 270, 315]
+/**
+ * A cog outline: eight flat-topped teeth around a ring, with a hole. Built
+ * from angles rather than drawn, so the teeth stay evenly spaced.
+ */
+const GEAR_PATH = (() => {
+  const teeth = 8
+  const outer = 10
+  const inner = 7.4
+  const pts = []
+  for (let i = 0; i < teeth; i++) {
+    const a = (i / teeth) * Math.PI * 2
+    const half = Math.PI / teeth
+    // Root, tooth flank up, tooth top, flank down.
+    for (const [r, da] of [[inner, -half * 0.62], [outer, -half * 0.36], [outer, half * 0.36], [inner, half * 0.62]]) {
+      pts.push(`${(12 + r * Math.sin(a + da)).toFixed(2)},${(12 - r * Math.cos(a + da)).toFixed(2)}`)
+    }
+  }
+  return `M${pts.join(' L')} Z`
+})()
 
 function GearIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="size-[21px]" aria-hidden="true">
-      <g stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-        {GEAR_TEETH.map((angle) => (
-          <line key={angle} x1="12" y1="2.6" x2="12" y2="5.2" transform={`rotate(${angle} 12 12)`} />
-        ))}
-      </g>
-      <circle cx="12" cy="12" r="4.6" fill="none" stroke="currentColor" strokeWidth="2.2" />
+    <svg viewBox="0 0 24 24" className="size-[22px]" aria-hidden="true">
+      <path d={GEAR_PATH} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   )
 }
