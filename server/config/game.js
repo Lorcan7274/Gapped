@@ -216,6 +216,12 @@ export const DUEL = Object.freeze({
   finishPaceWindowM: 200,
   // A leg's run must start after the leg was started, give or take clock skew.
   startSlackMs: 120_000,
+  // A leg already running when Sunday night falls is not cut off at
+  // midnight: its run still counts if it comes in within this long (as long
+  // as any run can last). A reply that lands then settles the duel as usual;
+  // a first leg that lands then voids it — the week is over, so nobody is
+  // left time to reply — and the challenger's Fuel comes back.
+  legGraceMs: TRACK.maxDurationMs,
   // How far back the feed of challengeable runs reaches, and how long it is.
   feedDays: 7,
   feedLimit: 50,

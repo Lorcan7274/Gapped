@@ -6,7 +6,7 @@ import { DUEL, RATING } from '../config/game.js'
 import { getPlayer } from '../db/players.js'
 import { getRun, getTrackData } from '../db/runs.js'
 import {
-  getDuel, duelsFor, feedFor, createDuel, startReply, rememberGhostMs, settle, DuelError,
+  getDuel, duelsFor, feedFor, createDuel, startReply, rememberGhostMs, settle, DuelError, OPEN_STATUSES,
 } from '../db/duels.js'
 import { describeSelf } from './me.js'
 
@@ -62,7 +62,9 @@ export default async function duelRoutes(app) {
   app.get('/api/duels', { preHandler: app.requirePlayer }, async (request) => {
     const me = request.player.id
     const since = addDays(weekOf(Date.now()), -14)
-    return { duels: duelsFor(me, { since }).map((row) => describeDuel(settle(row.id) ?? row, me)) }
+    // Only an open duel can have come due; settled ones are final.
+    const current = (row) => (OPEN_STATUSES.includes(row.status) ? settle(row.id) ?? row : row)
+    return { duels: duelsFor(me, { since }).map((row) => describeDuel(current(row), me)) }
   })
 
   /**
@@ -77,6 +79,10 @@ export default async function duelRoutes(app) {
     }
     if (run.distance_m < DUEL.minDistanceM || run.distance_m > RATING.maxDistanceM) {
       return refuse(reply, 400, 'run_length', 'That run is too short or too long to race.')
+    }
+    // The same window the feed offers.
+    if (run.started_at < Date.now() - DUEL.feedDays * 86_400_000) {
+      return refuse(reply, 400, 'run_stale', 'That run is too old to race.')
     }
     const ghost = ghostOf(run, run.distance_m)
     if (!ghost) return refuse(reply, 404, 'run_missing', 'That run cannot be raced.')

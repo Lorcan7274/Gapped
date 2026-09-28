@@ -17,8 +17,8 @@ const RUN_BODY_LIMIT = 8 * 1024 * 1024
 /**
  * Which leg of which duel an uploaded run is, or null if it is not one —
  * the duel has settled (Sunday passed, or the leg was walked away from), or
- * the run started before the leg did. A run that cannot be a leg is still
- * a run: it is stored and paid as solo.
+ * the run started before the leg did or after the duel's week was over. A
+ * run that cannot be a leg is still a run: it is stored and paid as solo.
  */
 function legFor(duelId, playerId, startedAt) {
   if (!duelId) return null
@@ -31,6 +31,8 @@ function legFor(duelId, playerId, startedAt) {
   if (!leg) return null
   const legStart = leg === 1 ? duel.leg1_started_at : duel.leg2_started_at
   if (startedAt < legStart - DUEL.startSlackMs) return null
+  // Running across Sunday midnight is fine; starting after it is not.
+  if (weekOf(startedAt - DUEL.startSlackMs) > duel.week) return null
   return { duel, leg }
 }
 
@@ -61,11 +63,14 @@ export default async function runRoutes(app) {
 
     const existing = findRunByStart(playerId, summary.startedAt)
     if (existing) {
-      const duel = getDuel(request.body?.duelId)
+      // Only a duel this run is actually a leg of; otherwise it counted as solo.
+      const duel = request.body?.duelId ? getDuel(String(request.body.duelId)) : null
+      const isLeg = Boolean(duel) && [duel.leg1_run_id, duel.leg2_run_id].includes(existing.id)
       return {
         run: serializeRun(existing),
         player: describeSelf(getPlayer(playerId)),
-        duel: duel && [duel.challenger_id, duel.target_id].includes(playerId) ? describeDuel(duel, playerId) : null,
+        duel: isLeg ? describeDuel(duel, playerId) : null,
+        ...(request.body?.duelId && !isLeg ? { duelClosed: true } : {}),
         duplicate: true,
       }
     }

@@ -68,6 +68,10 @@ export function parseTrack(raw, { now }, cfg = TRACK) {
  * the anchor. Returns the totals and the distance profile — cumulative
  * metres at each accepted fix, timed from the first accepted fix. The
  * profile is what a ghost is: how far the runner had got, and when.
+ *
+ * Fixes before the first good one are the GPS warming up — a duel leg even
+ * asks the runner to wait for them — so they are counted apart from the
+ * fixes rejected mid-run, and do not make a run look noisy.
  */
 export function walkTrack(points, cfg = TRACK) {
   let anchor = null
@@ -76,10 +80,12 @@ export function walkTrack(points, cfg = TRACK) {
   let distanceM = 0
   let accepted = 0
   let rejected = 0
+  let warmup = 0
   const profile = []
   for (const p of points) {
     if (p.acc != null && p.acc > cfg.maxAccuracyM) {
-      rejected += 1
+      if (anchor) rejected += 1
+      else warmup += 1
       continue
     }
     if (anchor) {
@@ -101,7 +107,7 @@ export function walkTrack(points, cfg = TRACK) {
     accepted += 1
     profile.push([p.t - firstAccepted.t, distanceM])
   }
-  return { distanceM, accepted, rejected, firstAccepted, lastAccepted, profile }
+  return { distanceM, accepted, rejected, warmup, firstAccepted, lastAccepted, profile }
 }
 
 /**

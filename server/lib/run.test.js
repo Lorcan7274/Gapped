@@ -59,6 +59,17 @@ describe('uploaded tracks', () => {
     assert.ok(summariseTrack(parseTrack(noisy, { now: NOW })).flags.includes('noisy'))
   })
 
+  test('waiting for a GPS fix before the run is not noise', () => {
+    const run = straightRun({ seconds: 300 })
+    const waiting = Array.from({ length: 400 }, (_, i) => ({
+      t: run[0].t - (400 - i) * 1000, lat: LAT, lng: -6.26, acc: 45,
+    }))
+    const s = summariseTrack(parseTrack([...waiting, ...run], { now: NOW }))
+    assert.deepEqual(s.flags, [])
+    assert.equal(s.rejected, 0)
+    assert.ok(Math.abs(s.distanceM - 900) < 5, s.distanceM)
+  })
+
   test('malformed uploads are refused with a reason', () => {
     const run = straightRun({ seconds: 10 })
     assert.equal(code(() => parseTrack(null, { now: NOW })), 'track_missing')

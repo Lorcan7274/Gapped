@@ -2,6 +2,7 @@ import { db, now } from './index.js'
 import { newId } from '../lib/ids.js'
 import { weekOf } from '../lib/economy.js'
 import { verdictFor } from '../lib/duel.js'
+import { DUEL } from '../config/game.js'
 import { getPlayer } from './players.js'
 import { recordRun } from './runs.js'
 
@@ -18,7 +19,8 @@ const COLUMNS = `
   leg2_run_id, leg2_ms, leg2_quit, outcome, margin_ms, challenger_points,
   target_points, challenger_mmr_delta, target_mmr_delta, created_at, settled_at
 `
-const OPEN = "('leg1', 'awaiting', 'leg2')"
+export const OPEN_STATUSES = Object.freeze(['leg1', 'awaiting', 'leg2'])
+const OPEN = `(${OPEN_STATUSES.map((s) => `'${s}'`).join(', ')})`
 
 const selectDuel = db.prepare(`SELECT ${COLUMNS} FROM duels WHERE id = ?`)
 const selectForPlayer = db.prepare(`
@@ -38,6 +40,7 @@ const selectOpenBetween = db.prepare(`
   LIMIT 1
 `)
 const selectDue = db.prepare(`SELECT id FROM duels WHERE status IN ${OPEN} AND week < ?`)
+const selectRaced = db.prepare('SELECT 1 FROM duels WHERE challenger_id = ? AND ghost_run_id = ? LIMIT 1')
 const selectFeed = db.prepare(`
   SELECT r.id, r.player_id, r.started_at, r.distance_m, r.elapsed_ms, r.ghost_ms,
          p.display_name, p.ladder_tier, p.ladder_division, p.created_at AS player_created_at
@@ -111,6 +114,10 @@ export const createDuel = db.transaction(({ challengerId, run, ghostMs, fuelCost
   if (openDuelBetween(challengerId, run.player_id)) {
     throw new DuelError('duel_exists', 'You already have a duel going with them. Finish that one first.')
   }
+  // The feed never offers a run twice; neither does this.
+  if (selectRaced.get(challengerId, run.id)) {
+    throw new DuelError('run_raced', 'You have already raced that run.')
+  }
   for (const open of openLegFor(challengerId)) quitLeg(open, challengerId, at)
   if (spendFuel.run({ id: challengerId, cost: fuelCost }).changes === 0) {
     throw new DuelError('fuel_short', `A duel costs ${fuelCost} Fuel. Run to earn more.`)
@@ -155,7 +162,9 @@ function quitLeg(duel, playerId, at) {
 /**
  * Store a leg's run (paid like any run) and put it on the duel, settling the
  * duel if that decides it. `leg` is 1 or 2; `ms` is the time to cover the
- * duel distance, or null for a quit. A flagged run voids the duel.
+ * duel distance, or null for a quit. A flagged run voids the duel, and so
+ * does a first leg that finished only after its week was over (run across
+ * Sunday midnight): there is no week left for the reply.
  */
 export const recordLeg = db.transaction(({ duelId, leg, ms, quarantined, runInput, at = now() }) => {
   const duel = getDuel(duelId)
@@ -166,7 +175,8 @@ export const recordLeg = db.transaction(({ duelId, leg, ms, quarantined, runInpu
   const quit = ms == null ? 1 : 0
   if (leg === 1) setLeg1.run({ id: duelId, run: run.id, ms: quit ? null : Math.round(ms), quit })
   else setLeg2.run({ id: duelId, run: run.id, ms: quit ? null : Math.round(ms), quit })
-  if (quarantined) voidDuel(duelId, at)
+  const tooLate = leg === 1 && !quit && weekOf(at) > duel.week
+  if (quarantined || tooLate) voidDuel(duelId, at)
   else settle(duelId, at)
   return { run, duel: getDuel(duelId) }
 })
@@ -174,7 +184,7 @@ export const recordLeg = db.transaction(({ duelId, leg, ms, quarantined, runInpu
 /** Nothing moves; the challenger gets their Fuel back. Quiet — no labels. */
 function voidDuel(duelId, at) {
   const duel = getDuel(duelId)
-  if (!duel || !['leg1', 'awaiting', 'leg2'].includes(duel.status)) return
+  if (!duel || !OPEN_STATUSES.includes(duel.status)) return
   const changed = finish.run({
     id: duelId, status: 'void', outcome: 'void', margin_ms: null,
     challenger_points: 0, target_points: 0, challenger_mmr_delta: 0, target_mmr_delta: 0,
@@ -186,6 +196,17 @@ function voidDuel(duelId, at) {
 }
 
 /**
+ * Whether a duel's Sunday has passed at `at`. A leg still running then gets
+ * DUEL.legGraceMs to come in before it counts as quit.
+ */
+function deadlinePassed(duel, at) {
+  const legRunning =
+    (duel.status === 'leg1' && !duel.leg1_quit) ||
+    (duel.status === 'leg2' && duel.leg2_ms == null && !duel.leg2_quit)
+  return weekOf(legRunning ? at - DUEL.legGraceMs : at) > duel.week
+}
+
+/**
  * Settle a duel if it is decided (see lib/duel.js verdictFor): points into
  * the duel's week, hidden ratings moved. Returns the duel either way.
  */
@@ -194,7 +215,7 @@ export const settle = db.transaction((duelId, at = now()) => {
   if (!duel) return null
   const challenger = getPlayer(duel.challenger_id)
   const target = getPlayer(duel.target_id)
-  const verdict = verdictFor(duel, challenger, target, { deadlinePassed: weekOf(at) > duel.week })
+  const verdict = verdictFor(duel, challenger, target, { deadlinePassed: deadlinePassed(duel, at) })
   if (!verdict) return duel
 
   const changed = finish.run({
@@ -218,9 +239,15 @@ export const settle = db.transaction((duelId, at = now()) => {
   return getDuel(duelId)
 })
 
-/** Sunday night: settle every duel whose week is over. Safe to run any time, any number of times. */
+/**
+ * Sunday night: settle every duel whose week is over (a leg still running
+ * gets its grace first). Safe to run any time, any number of times. Returns
+ * how many it settled.
+ */
 export function settleDue(at = now()) {
-  const due = selectDue.all(weekOf(at))
-  for (const { id } of due) settle(id, at)
-  return due.length
+  let settled = 0
+  for (const { id } of selectDue.all(weekOf(at))) {
+    if (settle(id, at)?.status === 'settled') settled += 1
+  }
+  return settled
 }
