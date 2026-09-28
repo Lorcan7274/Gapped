@@ -96,5 +96,6 @@ export function soloRewards(
   return { shards, fuel, points, capped: Math.round(raw) > shards }
 }
 
-/** Whether a run is long enough to keep a streak going. */
-export const countsForStreak = (minutes, s = STREAK) => minutes >= s.minMinutes
+/** Whether a run is long enough, in time and distance, to keep a streak going. */
+export const countsForStreak = (minutes, distanceM, s = STREAK) =>
+  minutes >= s.minMinutes && distanceM >= s.minDistanceM

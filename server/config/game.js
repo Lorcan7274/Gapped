@@ -193,7 +193,10 @@ export const SOLO_POINTS = Object.freeze({
 
 /** Streaks: consecutive days with a qualifying run; a small Shards multiplier. */
 export const STREAK = Object.freeze({
+  // A qualifying run lasts this long and actually goes somewhere: ten
+  // minutes with the phone on a table is not a run.
   minMinutes: 10,
+  minDistanceM: 1000,
   bonusPerDay: 0.02,
   maxBonusDays: 6,
 })
@@ -214,8 +217,11 @@ export const DUEL = Object.freeze({
   // held over the last `finishPaceWindowM`.
   finishToleranceM: 20,
   finishPaceWindowM: 200,
-  // A leg's run must start after the leg was started, give or take clock skew.
+  // A leg's run must start after the leg was started, give or take clock skew,
+  // and within this long of it: starting a leg is one attempt, so a runner
+  // cannot record several tries and upload only the best as the leg.
   startSlackMs: 120_000,
+  startWindowMs: 10 * 60_000,
   // A leg already running when Sunday night falls is not cut off at
   // midnight: its run still counts if it comes in within this long (as long
   // as any run can last). A reply that lands then settles the duel as usual;
