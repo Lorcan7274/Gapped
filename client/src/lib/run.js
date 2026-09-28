@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { createTracker, MAX_ACCURACY_M } from './tracker.js'
-import { api } from './api.js'
+import { api, readPlayer } from './api.js'
 import { ghostMetresAt } from './ghost.js'
 
 /**
@@ -15,7 +15,10 @@ import { ghostMetresAt } from './ghost.js'
  *
  * Phases: idle → running → saving → done, or error (with the track kept for
  * a retry). A finished run's raw fixes are kept in storage until the server
- * has them, so a reload or a dead zone at the finish loses nothing.
+ * has them, so a reload or a dead zone at the finish loses nothing. Runs
+ * waiting to upload queue up, oldest first, each marked with the player who
+ * ran it, so a second run never overwrites the first and a run only ever
+ * uploads to its own account.
  */
 
 const PENDING_KEY = 'gapped.pendingRun'
@@ -47,27 +50,38 @@ let clock = null
 let track = []
 let ghost = null // the ghost's profile, kept out of state (it can be large)
 let firstFixAt = null
+let uploading = null // the queued run the current save (or its error) is about
 
 function set(patch) {
   state = { ...state, ...patch }
   for (const fn of listeners) fn()
 }
 
+/** Every run still waiting to upload, oldest first. */
 function readPending() {
   try {
-    return JSON.parse(localStorage.getItem(PENDING_KEY) ?? 'null')
+    const stored = JSON.parse(localStorage.getItem(PENDING_KEY) ?? 'null')
+    return Array.isArray(stored) ? stored : stored ? [stored] : []
   } catch {
-    return null
+    return []
   }
 }
 
-function writePending(value) {
+function writePending(list) {
   try {
-    if (value) localStorage.setItem(PENDING_KEY, JSON.stringify(value))
+    if (list.length) localStorage.setItem(PENDING_KEY, JSON.stringify(list))
     else localStorage.removeItem(PENDING_KEY)
   } catch {
     /* storage full or blocked: the upload below is the only copy */
   }
+}
+
+// A run is known by its first fix: the server keys runs the same way.
+const sameRun = (a, b) => a.track?.[0]?.t === b.track?.[0]?.t
+const forget = (pending) => writePending(readPending().filter((p) => !sameRun(p, pending)))
+const mine = (pending) => {
+  const me = readPlayer()?.id
+  return Boolean(me) && (pending.playerId ?? me) === me
 }
 
 function stopRecording() {
@@ -78,16 +92,18 @@ function stopRecording() {
 }
 
 async function upload(pending) {
+  uploading = pending
   set({ phase: 'saving', error: null })
+  const { playerId: _owner, ...body } = pending
   try {
-    const result = await api('/api/runs', { method: 'POST', body: pending })
-    writePending(null)
+    const result = await api('/api/runs', { method: 'POST', body })
+    forget(pending)
     set({ phase: 'done', result })
     return result
   } catch (err) {
     // The server looked at it and said no: retrying cannot help.
     const refused = err.status >= 400 && err.status < 500 && !err.isUnknownPlayer
-    if (refused) writePending(null)
+    if (refused) forget(pending)
     set({
       phase: 'error',
       error: refused ? err.message : 'Could not save the run. It is kept on this phone — try again.',
@@ -104,7 +120,8 @@ function begin(patch) {
   set({ ...IDLE, ...patch, phase: 'running', startedAt })
   tracker = createTracker({
     onFix: (fix) => {
-      track.push(fix)
+      // Phones can hand over the same fix twice; the server wants time order.
+      if (!track.length || fix.t > track.at(-1).t) track.push(fix)
       set({ gps: 'ok', fixes: track.length })
     },
     onUpdate: (update) => {
@@ -176,31 +193,36 @@ export const run = {
       set({ phase: 'error', error: 'Not enough GPS came through to record that run.', retryable: false })
       return null
     }
-    const pending = { track, private: state.private }
+    const pending = { track, private: state.private, playerId: readPlayer()?.id ?? null }
     if (state.duel) Object.assign(pending, { duelId: state.duel.id, quit })
-    writePending(pending)
+    writePending([...readPending(), pending])
     track = []
     return upload(pending)
   },
 
   retry() {
-    const pending = readPending()
-    return pending ? upload(pending) : null
+    return uploading ? upload(uploading) : null
   },
 
-  /** Back to idle. A run still waiting to upload stays in storage. */
+  /**
+   * Back to idle. A run still waiting to upload stays in storage; after a
+   * saved run, the next one queued behind it (if any) goes up.
+   */
   dismiss() {
+    const saved = state.phase === 'done'
     stopRecording()
     track = []
     ghost = null
+    uploading = null
     set(IDLE)
+    if (saved) run.resumePending()
   },
 
-  /** On launch: a run that never reached the server gets another go. */
+  /** On launch: the oldest run of yours that never reached the server gets another go. */
   resumePending() {
-    const pending = readPending()
-    if (pending && state.phase === 'idle') return upload(pending)
-    return null
+    if (state.phase !== 'idle') return null
+    const next = readPending().find(mine)
+    return next ? upload(next) : null
   },
 
   /** Where this run has been, for the map: fixes good enough to draw, oldest first. */

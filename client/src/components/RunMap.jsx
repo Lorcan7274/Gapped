@@ -31,6 +31,8 @@ const ZOOM = 17
 export default function RunMap({ state, className = '' }) {
   const box = useRef(null)
   const mapRef = useRef(null)
+  // Set once the style has loaded; from then on it can be recoloured.
+  const styledRef = useRef(false)
   const bearingRef = useRef(0)
   const [failed, setFailed] = useState(false)
   const { theme } = useTheme()
@@ -60,6 +62,9 @@ export default function RunMap({ state, className = '' }) {
         map.once('load', () => {
           map.addSource('omt', CITY_SOURCE)
           for (const layer of cityLayers(themeRef.current)) map.addLayer(layer, 'route-glow')
+          // The theme may have changed while the style loaded.
+          applyTheme(map, themeRef.current)
+          styledRef.current = true
         })
         mapRef.current = map
       })
@@ -68,14 +73,16 @@ export default function RunMap({ state, className = '' }) {
       cancelled = true
       map?.remove()
       mapRef.current = null
+      styledRef.current = false
     }
     // The map is built once per run; the theme is swapped in place below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Not map.loaded(): that is false whenever tiles are loading, which, with
+  // the camera following every fix, is most of a run.
   useEffect(() => {
-    const map = mapRef.current
-    if (map?.loaded()) applyTheme(map, theme)
+    if (styledRef.current) applyTheme(mapRef.current, theme)
   }, [theme])
 
   // Follow the runner on every new fix.

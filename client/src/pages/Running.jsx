@@ -147,12 +147,14 @@ function LegResult({ result }) {
       <>
         <Label>Duel off</Label>
         <p className="mt-3 text-[15px] leading-relaxed text-slate">
-          Something about this run looked off, so the duel will not count. Nobody
-          gains or loses anything{duel.role === 'challenger' ? ', and your Fuel is back' : ''}.
+          {saved.status === 'quarantined'
+            ? 'Something about this run looked off, so the duel will not count.'
+            : `The week ended before ${name} could reply, so the duel will not count.`}{' '}
+          Nobody gains or loses anything{duel.role === 'challenger' ? ', and your Fuel is back' : ''}.
         </p>
       </>
     )
-  } else if (duel.status === 'awaiting') {
+  } else if (duel.role === 'challenger' && (duel.status === 'awaiting' || duel.status === 'leg2')) {
     const lead = duel.ghostMs - duel.legs.challenger.ms
     body = (
       <>
@@ -164,12 +166,23 @@ function LegResult({ result }) {
           {lead >= 0 ? `ahead of ${name}’s ghost` : `behind ${name}’s ghost`} · {clock(duel.legs.challenger.ms)}
         </p>
         <p className="mt-6 text-[15px] leading-relaxed text-slate">
-          {name} races your run back. They have until Sunday night — ignore it and
-          the points are yours.
+          {duel.status === 'leg2'
+            ? `${name} is racing your run back now.`
+            : `${name} races your run back. They have until Sunday night — ignore it and the points are yours.`}
         </p>
       </>
     )
-  } else if (duel.result?.you === 'quit') {
+  } else if (!duel.result) {
+    // Only reachable on a re-sent run whose duel has moved on without it.
+    body = (
+      <>
+        <Label>Run saved</Label>
+        <p className="mt-3 text-[15px] leading-relaxed text-slate">
+          Your leg against {name} is in. The duel settles when both legs are.
+        </p>
+      </>
+    )
+  } else if (duel.result.you === 'quit') {
     body = (
       <>
         <Label>Duel withdrawn</Label>

@@ -6,9 +6,10 @@ import { clock, metres, daysAgo, signedClock } from '../lib/format.js'
 import { Button, Label, Spinner } from '../components/ui.jsx'
 
 /**
- * Duels, one screen: challenges waiting on your reply, runs you can race as
- * ghosts, challenges waiting on theirs, and results. Tapping a ghost asks
- * once — a duel costs Fuel — then the race starts.
+ * Duels, one screen: challenges waiting on your reply, legs you started that
+ * never came in, runs you can race as ghosts, challenges waiting on theirs,
+ * and results. Tapping a ghost asks once — a duel costs Fuel — then the race
+ * starts.
  */
 export default function Duels({ onClose }) {
   const { player, meta, updatePlayer, setNotice } = useSession()
@@ -49,7 +50,11 @@ export default function Duels({ onClose }) {
   if (!player) return null
   const open = duels ?? []
   const replies = open.filter((d) => d.yourTurn)
-  const waiting = open.filter((d) => d.role === 'challenger' && d.status === 'awaiting')
+  // Your own leg, started but not in: a run lost mid-race, or still queued on this phone.
+  const unfinished = open.filter(
+    (d) => (d.role === 'challenger' && d.status === 'leg1') || (d.role === 'target' && d.status === 'leg2')
+  )
+  const waiting = open.filter((d) => d.role === 'challenger' && (d.status === 'awaiting' || d.status === 'leg2'))
   const results = open.filter((d) => d.result)
 
   if (picked) {
@@ -110,6 +115,18 @@ export default function Duels({ onClose }) {
             </Section>
           )}
 
+          {unfinished.length > 0 && (
+            <Section title="Not finished">
+              {unfinished.map((d) => (
+                <Row
+                  key={d.id}
+                  title={d.opponent?.displayName}
+                  detail={`${metres(d.distanceM)} · your leg is not in — a quit on Sunday unless it arrives`}
+                />
+              ))}
+            </Section>
+          )}
+
           <Section title="Race a ghost">
             {feed.runs.length === 0 ? (
               <p className="py-3 text-[15px] text-slate">No runs to race yet. When other runners log a run, it shows up here.</p>
@@ -133,7 +150,7 @@ export default function Duels({ onClose }) {
                 <Row
                   key={d.id}
                   title={d.opponent?.displayName}
-                  detail={`${metres(d.distanceM)} · you ${signedClock(d.ghostMs - d.legs.challenger.ms)} on their ghost`}
+                  detail={`${metres(d.distanceM)} · you ${signedClock(d.ghostMs - d.legs.challenger.ms)} on their ghost${d.status === 'leg2' ? ' · replying now' : ''}`}
                 />
               ))}
             </Section>

@@ -4,7 +4,8 @@ const HOLD_MS = 1200
 
 /**
  * Ending a run must survive sweaty thumbs and a bouncing screen, so it is a
- * real press-and-hold: nothing happens until the bar fills.
+ * real press-and-hold: nothing happens until the bar fills. Enter and Space
+ * hold it the same way.
  */
 export default function HoldToEnd({ onDone, label = 'Hold to end', variant = 'outline', className = '' }) {
   const [pct, setPct] = useState(0)
@@ -35,7 +36,13 @@ export default function HoldToEnd({ onDone, label = 'Hold to end', variant = 'ou
       onPointerUp={stop}
       onPointerLeave={stop}
       onPointerCancel={stop}
-      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onDone()}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        if (!e.repeat) start()
+      }}
+      onKeyUp={(e) => (e.key === 'Enter' || e.key === ' ') && stop()}
+      onBlur={stop}
       onContextMenu={(e) => e.preventDefault()}
       className={`btn btn-${variant} relative select-none overflow-hidden touch-none ${className}`}
     >
