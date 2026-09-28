@@ -1,22 +1,15 @@
+// The socket carries live friend duels only — everything ranked is HTTP.
 // Every frame is JSON: { type, ...payload }. `id` echoes a client request id
 // back on the reply so the UI can correlate.
 
 export const CLIENT = {
   PING: 'ping',
-  LOCATION: 'location',
   CHALLENGE: 'challenge',
   CHALLENGE_CANCEL: 'challenge:cancel',
   CHALLENGE_RESPOND: 'challenge:respond',
-  QUEUE_JOIN: 'queue:join',
-  QUEUE_LEAVE: 'queue:leave',
   MATCH_PROGRESS: 'match:progress',
   MATCH_FINISH: 'match:finish',
   MATCH_FORFEIT: 'match:forfeit',
-  CALL_INVITE: 'call:invite',
-  CALL_ACCEPT: 'call:accept',
-  CALL_DECLINE: 'call:decline',
-  CALL_SIGNAL: 'call:signal',
-  CALL_END: 'call:end',
 }
 
 export const SERVER = {
@@ -28,18 +21,9 @@ export const SERVER = {
   CHALLENGE_DECLINED: 'challenge:declined',
   CHALLENGE_CANCELLED: 'challenge:cancelled',
   CHALLENGE_EXPIRED: 'challenge:expired',
-  QUEUE_JOINED: 'queue:joined',
-  QUEUE_LEFT: 'queue:left',
   MATCH_START: 'match:start',
   MATCH_TICK: 'match:tick',
   MATCH_END: 'match:end',
-  PRESENCE: 'presence',
-  PLAYERS: 'players',
-  CALL_INCOMING: 'call:incoming',
-  CALL_ACCEPTED: 'call:accepted',
-  CALL_DECLINED: 'call:declined',
-  CALL_SIGNAL: 'call:signal',
-  CALL_ENDED: 'call:ended',
 }
 
 export function encode(type, payload = {}) {

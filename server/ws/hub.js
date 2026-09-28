@@ -1,13 +1,6 @@
 import { WebSocketServer } from 'ws'
 import { CLIENT, SERVER, encode, decode } from './protocol.js'
-import {
-  getPlayer,
-  setLocation,
-  touchPlayer,
-  rankOf,
-  allPlayers,
-  hasPhone,
-} from '../db/players.js'
+import { getPlayer, touchPlayer } from '../db/players.js'
 import {
   createChallenge,
   getChallenge,
@@ -21,18 +14,11 @@ import {
   recordElapsed,
   settleMatch,
   abandon,
-} from '../db/matches.js'
-import { publicPlayer, selfPlayer } from '../lib/serialize.js'
-import { distanceMetres } from '../lib/geo.js'
-import {
-  normaliseDistance, normaliseDuration, normaliseCoords,
-  normaliseFormat, QUICK_FORMATS,
-} from '../lib/validate.js'
-import {
-  DISCOVERY_RADIUS_M, DISCOVERY_RATING_SPREAD, PRESENCE_TTL_MS, ICE_SERVERS,
-} from '../config.js'
+} from '../db/liveDuels.js'
+import { publicPlayer } from '../lib/serialize.js'
+import { normaliseDistance, normaliseDuration } from '../lib/validate.js'
 import { db } from '../db/index.js'
-import { resolveSession } from '../db/sessions.js'
+import { playerIdForToken } from '../auth/index.js'
 
 // Both runners get a shared countdown so neither starts early.
 const COUNTDOWN_MS = 5_000
@@ -46,25 +32,11 @@ const TIMED_SETTLE_GRACE_MS = 3_000
 // Nobody covers ground faster than the GPS filter allows; anything past this
 // in a timed duel is a made-up number.
 const MAX_PLAUSIBLE_SPEED_MPS = 12
-// Call signalling is SDP and ICE candidates — a few kilobytes at most. The cap
-// keeps the duel socket from being used as a general-purpose pipe.
-const MAX_SIGNAL_BYTES = 16_000
-
 export function createHub(log) {
   /** playerId -> Set<WebSocket> — a player may have the app open twice. */
   const sockets = new Map()
-  /**
-   * matchId -> { forfeitTimers: Map<playerId, Timeout>, deadlineTimer, call }
-   * `call` is the in-duel video call, if any: { from, state: 'ringing' | 'connected' }.
-   * The media flows peer to peer; the hub only decides who may signal whom.
-   */
+  /** matchId -> { forfeitTimers: Map<playerId, Timeout>, deadlineTimer } */
   const liveMatches = new Map()
-  /**
-   * playerId -> { format, joinedAt } — runners waiting for a quick match.
-   * In memory only: queueing is a claim to be ready right now, so it must
-   * not outlive the process or the runner's last socket.
-   */
-  const matchQueue = new Map()
 
   const wss = new WebSocketServer({ noServer: true })
 
@@ -109,30 +81,6 @@ export function createHub(log) {
   const fail = (socket, message, requestId) =>
     send(socket, SERVER.ERROR, { message, id: requestId ?? null })
 
-  /**
-   * Push the full player list to everyone connected. Each socket gets the
-   * list rendered from its own viewer's perspective, so distances are
-   * relative to the person reading them. Called whenever anyone joins,
-   * moves, renames, connects or disconnects.
-   */
-  function broadcastPlayers() {
-    const rows = allPlayers()
-    for (const [playerId, set] of sockets) {
-      const viewer = getPlayer(playerId)
-      if (!viewer) continue
-      const payload = encode(SERVER.PLAYERS, {
-        players: rows.map((row) => publicPlayer(row, viewer, {
-          online: isOnline(row.id),
-          isYou: row.id === playerId,
-        })),
-        count: rows.length,
-      })
-      for (const socket of set) {
-        if (socket.readyState === socket.OPEN) socket.send(payload)
-      }
-    }
-  }
-
   /* -------------------------------------------------------------- matches */
 
   function sideOf(match, playerId) {
@@ -161,24 +109,14 @@ export function createHub(log) {
       startsAt: match.started_at + COUNTDOWN_MS,
       opponent: publicPlayer(getPlayer(opponentOf(match, playerId))),
       progress: { [match.a_id]: match.a_progress_m, [match.b_id]: match.b_progress_m },
-      iceServers: ICE_SERVERS,
     }
   }
 
-  /**
-   * Create and announce a live match. Reached two ways: an accepted direct
-   * challenge, or two runners paired out of the quick-match queue — no
-   * challenge row then, because queueing up was the consent.
-   */
+  /** Create and announce a live duel from an accepted challenge. */
   function beginMatch({ challengeId = null, aId, bId, mode = 'race', distanceM = 0, durationMs = null }) {
     const a = getPlayer(aId)
     const b = getPlayer(bId)
     if (!a || !b) return null
-
-    // Starting a match ends any search, however the match came about —
-    // accepting a direct challenge mid-queue must not leave you matchable.
-    matchQueue.delete(a.id)
-    matchQueue.delete(b.id)
 
     const match = createMatch({
       challengeId,
@@ -187,11 +125,9 @@ export function createHub(log) {
       mode,
       distanceM,
       durationMs,
-      aRating: a.rating,
-      bRating: b.rating,
     })
 
-    const runtime = { forfeitTimers: new Map(), deadlineTimer: null, call: null }
+    const runtime = { forfeitTimers: new Map(), deadlineTimer: null }
     liveMatches.set(match.id, runtime)
 
     // A timed duel ends itself: when the clock runs out, whoever covered
@@ -217,7 +153,6 @@ export function createHub(log) {
         countdownMs: COUNTDOWN_MS,
         you: publicPlayer(self),
         opponent: publicPlayer(other),
-        iceServers: ICE_SERVERS,
       })
     }
 
@@ -263,14 +198,9 @@ export function createHub(log) {
       liveMatches.delete(matchId)
     }
 
+    // Live duels are for pride (and wagered Fuel, later): no points, no rating.
     const { match } = settled
-    if (runtime?.call) {
-      for (const playerId of [match.a_id, match.b_id]) {
-        sendTo(playerId, SERVER.CALL_ENDED, { matchId, reason: 'match_over' })
-      }
-    }
     for (const playerId of [match.a_id, match.b_id]) {
-      const self = getPlayer(playerId)
       const other = getPlayer(opponentOf(match, playerId))
       const side = sideOf(match, playerId)
       sendTo(playerId, SERVER.MATCH_END, {
@@ -282,13 +212,10 @@ export function createHub(log) {
         winnerId: match.winner_id,
         outcome:
           match.winner_id == null ? 'draw' : match.winner_id === playerId ? 'win' : 'loss',
-        ratingBefore: side === 'a' ? match.a_rating_before : match.b_rating_before,
-        ratingAfter: side === 'a' ? match.a_rating_after : match.b_rating_after,
         elapsedMs: side === 'a' ? match.a_elapsed_ms : match.b_elapsed_ms,
         opponentElapsedMs: side === 'a' ? match.b_elapsed_ms : match.a_elapsed_ms,
         progressM: side === 'a' ? match.a_progress_m : match.b_progress_m,
         opponentProgressM: side === 'a' ? match.b_progress_m : match.a_progress_m,
-        player: selfPlayer(self, { rank: rankOf(self.id) }),
         opponent: publicPlayer(other),
       })
     }
@@ -319,33 +246,12 @@ export function createHub(log) {
     }
   }
 
-  /**
-   * A call only ever connects the two runners of one live duel. Returns the
-   * match, its runtime and the other runner, or null for anyone else.
-   */
-  function callPeer({ playerId, msg }) {
-    const match = getMatch(String(msg.matchId ?? ''))
-    if (!match || match.status !== 'live' || !sideOf(match, playerId)) return null
-    const runtime = liveMatches.get(match.id)
-    if (!runtime) return null
-    return { match, runtime, opponentId: opponentOf(match, playerId) }
-  }
-
   /* ------------------------------------------------------------- handlers */
 
   const handlers = {
     [CLIENT.PING](ctx) {
       touchPlayer(ctx.playerId)
       send(ctx.socket, SERVER.PONG, { id: ctx.msg.id ?? null })
-    },
-
-    [CLIENT.LOCATION](ctx) {
-      const coords = normaliseCoords(ctx.msg.lat, ctx.msg.lng)
-      // A client that could not get a fix simply sends nothing usable; that
-      // is not an error worth surfacing to the player.
-      if (!coords) return
-      setLocation(ctx.playerId, coords.lat, coords.lng)
-      broadcastPlayers()
     },
 
     [CLIENT.CHALLENGE](ctx) {
@@ -371,17 +277,8 @@ export function createHub(log) {
       if (!isOnline(opponentId)) return fail(socket, 'That runner is offline.', msg.id)
       if (hasLiveMatch(playerId)) return fail(socket, 'You are already in a race.', msg.id)
       if (hasLiveMatch(opponentId)) return fail(socket, 'They are already racing.', msg.id)
-
-      if (
-        me.lat == null || me.lng == null ||
-        them.lat == null || them.lng == null
-      ) {
-        return fail(socket, 'Both runners need to share location first.', msg.id)
-      }
-      const apart = distanceMetres(me.lat, me.lng, them.lat, them.lng)
-      if (apart > DISCOVERY_RADIUS_M) {
-        return fail(socket, 'They are too far away to race.', msg.id)
-      }
+      // Phase 5 limits live challenges to accepted friends. There is no
+      // geography anywhere: friends race wherever they each are.
 
       const challenge = createChallenge({
         fromId: playerId, toId: opponentId, mode, distanceM, durationMs,
@@ -390,7 +287,7 @@ export function createHub(log) {
       send(socket, SERVER.CHALLENGE_SENT, {
         id: msg.id ?? null,
         challengeId: challenge.id,
-        opponent: publicPlayer(them, me),
+        opponent: publicPlayer(them),
         mode,
         distanceM,
         durationMs,
@@ -398,7 +295,7 @@ export function createHub(log) {
       })
       sendTo(opponentId, SERVER.CHALLENGE_INCOMING, {
         challengeId: challenge.id,
-        from: publicPlayer({ ...me, distance_m: Math.round(apart) }, them),
+        from: publicPlayer(me),
         mode,
         distanceM,
         durationMs,
@@ -445,71 +342,6 @@ export function createHub(log) {
       if (!resolveChallenge(challenge.id, 'accepted')) return
 
       startMatch(challenge)
-    },
-
-    /**
-     * Quick match. You queue for one of two fixed formats and get paired
-     * with the longest-waiting runner who fits: same format, both located,
-     * inside the discovery radius and rating spread. The match starts the
-     * moment a pair exists — queueing was the consent, nothing to accept.
-     */
-    [CLIENT.QUEUE_JOIN](ctx) {
-      const { socket, playerId, msg } = ctx
-      const key = normaliseFormat(msg.format)
-      if (!key) return fail(socket, 'Pick a duel format.', msg.id)
-
-      // A refused join also answers QUEUE_LEFT: none of these paths can
-      // coexist with a queue entry, so the socket that asked converges on
-      // "not searching" instead of showing a search the server is not running
-      // (a reconnecting phone quietly rejoins, and its rejoin can be refused).
-      const refuse = (message) => {
-        fail(socket, message, msg.id)
-        send(socket, SERVER.QUEUE_LEFT, { id: msg.id ?? null })
-      }
-      if (hasLiveMatch(playerId)) return refuse('You are already in a race.')
-
-      const me = getPlayer(playerId)
-      if (!me) return refuse('Unknown player.')
-      if (me.lat == null || me.lng == null) {
-        return refuse('Share your location to get matched.')
-      }
-
-      // Map iteration is insertion order, so the first fit has waited longest.
-      for (const [candidateId, entry] of matchQueue) {
-        if (candidateId === playerId || entry.format !== key) continue
-        const them = getPlayer(candidateId)
-        if (!them || !isOnline(candidateId) || hasLiveMatch(candidateId)) {
-          matchQueue.delete(candidateId) // stale entry; sweep it as we pass
-          continue
-        }
-        if (them.lat == null || them.lng == null) continue
-        if (Math.abs(them.rating - me.rating) > DISCOVERY_RATING_SPREAD) continue
-        if (distanceMetres(me.lat, me.lng, them.lat, them.lng) > DISCOVERY_RADIUS_M) continue
-
-        const format = QUICK_FORMATS[key]
-        beginMatch({
-          aId: candidateId,
-          bId: playerId,
-          mode: format.mode,
-          distanceM: format.distanceM ?? 0,
-          durationMs: format.durationMs ?? null,
-        })
-        return
-      }
-
-      // Nobody fits yet: wait. Rejoining only retunes the format — Map.set
-      // on an existing key keeps your place in line. The queue is keyed per
-      // player, not per socket, so every device this runner has open is told:
-      // otherwise a second tab keeps offering "Find duel" for a search that
-      // is already running, and closing the tab that queued looks like a
-      // cancel it never was.
-      matchQueue.set(playerId, { format: key, joinedAt: Date.now() })
-      sendTo(playerId, SERVER.QUEUE_JOINED, { id: msg.id ?? null, format: key })
-    },
-
-    [CLIENT.QUEUE_LEAVE](ctx) {
-      matchQueue.delete(ctx.playerId)
-      sendTo(ctx.playerId, SERVER.QUEUE_LEFT, { id: ctx.msg.id ?? null })
     },
 
     [CLIENT.MATCH_PROGRESS](ctx) {
@@ -585,72 +417,6 @@ export function createHub(log) {
       endMatch(match.id, opponentOf(match, ctx.playerId), 'forfeit')
     },
 
-    [CLIENT.CALL_INVITE](ctx) {
-      const peer = callPeer(ctx)
-      if (!peer) return
-      const { match, runtime, opponentId } = peer
-      const call = runtime.call
-      // Both tapped call at once: theirs is already ringing, so this runner
-      // gets that one to answer rather than a refusal.
-      if (call?.state === 'ringing' && call.from === opponentId) {
-        return send(ctx.socket, SERVER.CALL_INCOMING, {
-          matchId: match.id, from: publicPlayer(getPlayer(opponentId)),
-        })
-      }
-      if (call || !isOnline(opponentId)) {
-        return send(ctx.socket, SERVER.CALL_ENDED, { matchId: match.id, reason: 'unavailable' })
-      }
-      runtime.call = { from: ctx.playerId, state: 'ringing' }
-      sendTo(opponentId, SERVER.CALL_INCOMING, {
-        matchId: match.id, from: publicPlayer(getPlayer(ctx.playerId)),
-      })
-    },
-
-    [CLIENT.CALL_ACCEPT](ctx) {
-      const peer = callPeer(ctx)
-      if (!peer) return
-      const { match, runtime, opponentId } = peer
-      const call = runtime.call
-      if (call?.state !== 'ringing' || call.from !== opponentId) {
-        return send(ctx.socket, SERVER.CALL_ENDED, { matchId: match.id, reason: 'unavailable' })
-      }
-      call.state = 'connected'
-      // The caller makes the WebRTC offer once it hears this.
-      sendTo(opponentId, SERVER.CALL_ACCEPTED, { matchId: match.id })
-    },
-
-    [CLIENT.CALL_DECLINE](ctx) {
-      const peer = callPeer(ctx)
-      if (!peer) return
-      const { match, runtime, opponentId } = peer
-      const call = runtime.call
-      if (call?.state !== 'ringing' || call.from !== opponentId) return
-      runtime.call = null
-      sendTo(opponentId, SERVER.CALL_DECLINED, {
-        matchId: match.id, by: publicPlayer(getPlayer(ctx.playerId)),
-      })
-    },
-
-    [CLIENT.CALL_SIGNAL](ctx) {
-      const peer = callPeer(ctx)
-      if (peer?.runtime.call?.state !== 'connected') return
-      if (JSON.stringify(ctx.msg).length > MAX_SIGNAL_BYTES) return
-      const { description, candidate, camera } = ctx.msg
-      // Only the fields a call needs go through; anything else is dropped.
-      sendTo(peer.opponentId, SERVER.CALL_SIGNAL, {
-        matchId: peer.match.id,
-        description: description ?? undefined,
-        candidate: candidate ?? undefined,
-        camera: typeof camera === 'boolean' ? camera : undefined,
-      })
-    },
-
-    [CLIENT.CALL_END](ctx) {
-      const peer = callPeer(ctx)
-      if (!peer?.runtime.call) return
-      peer.runtime.call = null
-      sendTo(peer.opponentId, SERVER.CALL_ENDED, { matchId: peer.match.id, reason: 'hangup' })
-    },
   }
 
   /* ------------------------------------------------------------ lifecycle */
@@ -666,14 +432,8 @@ export function createHub(log) {
     if (live) disarmForfeit(live.id, playerId)
 
     send(socket, SERVER.READY, {
-      player: selfPlayer(getPlayer(playerId), { rank: rankOf(playerId) }),
       liveMatch: live ? matchState(live, playerId) : null,
-      presenceTtlMs: PRESENCE_TTL_MS,
     })
-
-    // The new arrival needs the list, and everyone else needs to see them
-    // come online.
-    broadcastPlayers()
 
     socket.on('pong', () => {
       socket.isAlive = true
@@ -695,28 +455,14 @@ export function createHub(log) {
     socket.on('close', () => {
       unregister(playerId, socket)
       if (isOnline(playerId)) return
-      // A runner with no sockets left must not be paired into a race.
-      matchQueue.delete(playerId)
-      broadcastPlayers()
       const current = getLiveMatchFor(playerId)
-      if (current) {
-        armForfeit(current, playerId)
-        // A call does not survive its runner dropping off; they can ring
-        // again once reconnected.
-        const runtime = liveMatches.get(current.id)
-        if (runtime?.call) {
-          runtime.call = null
-          sendTo(opponentOf(current, playerId), SERVER.CALL_ENDED, {
-            matchId: current.id, reason: 'disconnected',
-          })
-        }
-      }
+      if (current) armForfeit(current, playerId)
     })
 
     socket.on('error', (error) => log.warn({ error, playerId }, 'socket error'))
   })
 
-  // Drop sockets that stop answering, so presence stays honest.
+  // Drop sockets that stop answering, so a vanished runner's forfeit clock starts.
   const heartbeat = setInterval(() => {
     for (const socket of wss.clients) {
       if (socket.isAlive === false) {
@@ -749,28 +495,16 @@ export function createHub(log) {
       return
     }
 
-    // The player id from localStorage is the credential. A stale one (the
-    // database was reset, say) is refused so the client can clear it and
-    // send the person back to the join screen.
-    const token = url.searchParams.get('token')
-    const session = token ? resolveSession(token) : null
-    let player = session ? getPlayer(session.player_id) : null
-
-    if (!player) {
-      // Same legacy allowance as the HTTP side: a bare id still works for an
-      // account that has never had a verified number attached.
-      const legacy = getPlayer(
-        url.searchParams.get('playerId') ||
-        request.headers['sec-websocket-protocol'] || ''
-      )
-      if (legacy && !hasPhone(legacy.id)) player = legacy
-    }
+    // The session token is the credential, as on the HTTP side. A dead one
+    // (expired, signed out, player removed) is refused so the client can
+    // clear it and show sign-in again.
+    const player = getPlayer(playerIdForToken(url.searchParams.get('token')))
 
     if (!player) {
       // Complete the handshake, then close with policy code 1008. A raw 401
       // surfaces in the browser as an anonymous 1006, so the client could
-      // never tell "server is down" from "this id is dead" and would retry a
-      // dead credential forever.
+      // never tell "server is down" from "this session is dead" and would
+      // retry a dead credential forever.
       wss.handleUpgrade(request, socket, head, (ws) => {
         ws.close(1008, 'unknown player')
       })
@@ -790,21 +524,20 @@ export function createHub(log) {
       if (runtime.deadlineTimer) clearTimeout(runtime.deadlineTimer)
     }
     liveMatches.clear()
-    matchQueue.clear()
     for (const socket of wss.clients) socket.terminate()
     wss.close()
   }
 
-  // Any race still marked live at boot belongs to a process that is gone.
-  // We deliberately do not settle ratings for races nobody was watching —
-  // we just stop them blocking new challenges.
+  // Any duel still marked live at boot belongs to a process that is gone.
+  // Nobody was watching it finish, so it is abandoned, not settled — it just
+  // stops blocking new challenges.
   function reconcileOnBoot() {
-    const stale = db.prepare("SELECT id FROM matches WHERE status = 'live'").all()
+    const stale = db.prepare("SELECT id FROM live_duels WHERE status = 'live'").all()
     for (const match of stale) {
       abandon(match.id)
       log.warn({ matchId: match.id }, 'abandoned match left live by a previous process')
     }
   }
 
-  return { wss, handleUpgrade, close, reconcileOnBoot, isOnline, sendTo, broadcastPlayers }
+  return { wss, handleUpgrade, close, reconcileOnBoot, isOnline, sendTo }
 }

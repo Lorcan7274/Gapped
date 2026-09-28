@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSession } from '../state/session.jsx'
 import { distanceLabel } from '../lib/format.js'
 import { formatDuration } from '../lib/duelTypes.js'
-import { Shard } from './Crystal.jsx'
+import Crystal from './Crystal.jsx'
 import { Button, Label } from './ui.jsx'
 
 export default function ChallengeSheet() {
@@ -31,11 +31,12 @@ export default function ChallengeSheet() {
   return (
     <div className="fixed inset-0 z-50 mx-auto max-w-[430px] flex flex-col justify-end bg-paper px-6 safe-b">
       <div className="flex flex-1 flex-col items-center justify-center gap-5 text-center">
-        <Shard size={54} tone="garnet" />
+        {/* The nemesis cluster, void-beams and all. */}
+        <Crystal size={54} tone="garnet" />
         <Label className="text-garnet">Challenge</Label>
         <p className="display text-[44px]">{incoming.from.displayName}</p>
         <p className="nums text-[15px] text-slate">
-          {incoming.from.rating} · wants{' '}
+          {incoming.from.tier?.label ?? 'Live duel'} · wants{' '}
           {incoming.mode === 'timed'
             ? formatDuration(incoming.durationMs / 60_000)
             : distanceLabel(incoming.distanceM)}

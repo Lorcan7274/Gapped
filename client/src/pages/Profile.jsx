@@ -1,242 +1,188 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { useSession } from '../state/session.jsx'
-import { usePhoneAuth } from '../lib/usePhoneAuth.js'
-import {
-  detectCountry, rememberCountry, toE164, isCompleteNumber,
-} from '../lib/countries.js'
-import { clock, distanceLabel, signed } from '../lib/format.js'
-import { formatDuration } from '../lib/duelTypes.js'
+import { clock, metres, daysAgo } from '../lib/format.js'
+import { useRun } from '../lib/run.js'
 import { Shard } from '../components/Crystal.jsx'
-import PhoneField from '../components/PhoneField.jsx'
-import { Button, Label, Rule, Spinner } from '../components/ui.jsx'
+import { Button, Label, Spinner } from '../components/ui.jsx'
 
 const field =
   'min-h-[56px] w-full border-b border-ink bg-transparent pb-2 text-[17px] ' +
   'font-700 text-ink placeholder:text-muted focus:outline-none'
 
 /**
- * An account with no verified number lives entirely in this browser's
- * localStorage — leaving deletes it, clearing the browser loses it. Proving
- * a phone number attaches it to the account you already are, rating and all.
+ * The You tab: what your running has grown — Shards, distance, runs, streak —
+ * and the runs themselves. No rating anywhere: the hidden number stays hidden.
  */
-function SecureAccount({ player, setNotice }) {
-  const [open, setOpen] = useState(false)
-  const {
-    stage, phone, setPhone, code, setCode,
-    busy, error, devCode, resendIn, request, verify, back,
-  } = usePhoneAuth()
-  const [country, setCountry] = useState(detectCountry)
-  const [national, setNational] = useState('')
+export default function Profile({ settingsOpen = false }) {
+  const { player, setNotice } = useSession()
+  const [runs, setRuns] = useState(null)
+  // A run just saved should show up without a reload.
+  const lastRunId = useRun().result?.run?.id
 
-  const phoneReady = isCompleteNumber(phone)
+  useEffect(() => {
+    if (!player) return
+    api('/api/me/runs')
+      .then((d) => setRuns(d.runs))
+      .catch(() => setRuns([]))
+  }, [player?.id, lastRunId])
 
-  function changeCountry(next) {
-    setCountry(next)
-    rememberCountry(next)
-    setPhone(toE164(next, national))
-  }
-  function changeNational(next) {
-    setNational(next)
-    setPhone(toE164(country, next))
-  }
-
-  async function submitNumber(event) {
-    event.preventDefault()
-    if (phoneReady) request()
-  }
-
-  async function submitCode(event) {
-    event.preventDefault()
-    // The claim carries this account's id, so the name is only a fallback.
-    const err = await verify({ displayName: player.displayName })
-    if (!err) setNotice({ tone: 'good', text: 'Number verified. Sign in anywhere to pick this account up.' })
-  }
+  if (!player) return null
+  if (settingsOpen) return <Settings player={player} setNotice={setNotice} />
 
   return (
-    <div className="mt-8">
-      <Rule />
-      <div className="pt-4">
-        <Label className="text-garnet">This account is tied to this device</Label>
-        <p className="mt-2 text-[15px] leading-relaxed text-slate">
-          Verify your phone number and your rating follows you anywhere.
-        </p>
-        {!open ? (
-          <Button variant="outline" className="mt-4" onClick={() => setOpen(true)}>
-            Secure account
-          </Button>
-        ) : stage === 'number' ? (
-          <form onSubmit={submitNumber} className="mt-4 flex flex-col gap-4">
-            <PhoneField
-              size="md"
-              country={country}
-              onCountry={changeCountry}
-              national={national}
-              onNational={changeNational}
-              autoFocus
-            />
-            {error && <p className="text-[13px] text-garnet">{error}</p>}
-            <Button type="submit" disabled={busy || !phoneReady}>
-              {busy ? 'Sending…' : 'Text me a code'}
-            </Button>
-          </form>
+    <div className="px-6 pb-32 pt-6">
+      <div className="flex items-center gap-4">
+        <Shard size={34} tone={player.tier?.key ?? 'bronze'} />
+        <div className="min-w-0">
+          <h2 className="display truncate text-[34px]">{player.displayName}</h2>
+          <p className="label mt-1 text-muted">{player.tier?.label}</p>
+        </div>
+      </div>
+
+      <div className="mt-7 grid grid-cols-2 border-y border-rule">
+        <Stat label="Shards" value={player.shards ?? 0} />
+        <Stat label="Distance" value={metres(player.lifetimeM ?? 0)} divided />
+        <Stat label="Runs" value={player.runs ?? 0} top />
+        <Stat label="Streak" value={player.streak ? `${player.streak}d` : '—'} divided top />
+      </div>
+
+      <div className="mt-7">
+        <Label>Recent runs</Label>
+        {runs === null ? (
+          <div className="py-8"><Spinner /></div>
+        ) : runs.length === 0 ? (
+          <p className="mt-3 text-[15px] text-slate">
+            No runs yet. Start one from the Run tab — every run pays.
+          </p>
         ) : (
-          <form onSubmit={submitCode} className="mt-4 flex flex-col gap-4">
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern="[0-9]*"
-              maxLength={6}
-              required
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              placeholder="000000"
-              aria-label="Six-digit code"
-              className={`nums ${field} text-center text-[24px] tracking-[0.4em]`}
-            />
-            {devCode && (
-              <p className="nums text-[13px] text-muted">
-                No SMS provider in dev — your code is {devCode}
-              </p>
-            )}
-            {error && <p className="text-[13px] text-garnet">{error}</p>}
-            <Button type="submit" disabled={busy || code.length !== 6}>
-              {busy ? 'Checking…' : 'Verify number'}
-            </Button>
-            <div className="flex items-center justify-between">
-              <button type="button" onClick={back} className="label min-h-[56px] text-muted">
-                Wrong number?
-              </button>
-              <button
-                type="button"
-                onClick={request}
-                disabled={busy || resendIn > 0}
-                className="label min-h-[56px] text-muted disabled:opacity-40"
-              >
-                {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
-              </button>
-            </div>
-          </form>
+          <ul className="mt-2.5">
+            {runs.map((r, i) => (
+              <RunRow key={r.id} run={r} divided={i > 0} />
+            ))}
+          </ul>
         )}
       </div>
     </div>
   )
 }
 
-export default function Profile() {
-  const { player, leave, setNotice } = useSession()
-  const [matches, setMatches] = useState(null)
+function Stat({ label, value, divided = false, top = false }) {
+  return (
+    <div
+      className={`flex flex-col gap-1 py-4 ${divided ? 'border-l border-rule pl-4' : ''} ${top ? 'border-t border-rule' : ''}`}
+    >
+      <Label>{label}</Label>
+      <span className="display nums text-[28px]">{value}</span>
+    </div>
+  )
+}
 
-  useEffect(() => {
-    if (!player) return
-    api('/api/me/matches', { playerId: player.id })
-      .then((d) => setMatches(d.matches))
-      .catch(() => setMatches([]))
-  }, [player?.id])
+/** One run: when, how far, how long, and what it paid. */
+function RunRow({ run, divided }) {
+  const quarantined = run.status === 'quarantined'
+  const tags = [run.kind === 'duel' ? 'Duel leg' : 'Solo', run.private && 'private'].filter(Boolean)
+  return (
+    <li className={divided ? 'border-t border-rule' : ''}>
+      <div className="flex min-h-[56px] items-center gap-3.5 py-[9px]">
+        <div className="min-w-0 flex-1">
+          <p className="nums text-[15px]">
+            {metres(run.distanceM)} <span className="text-muted">· {clock(run.elapsedMs)}</span>
+          </p>
+          <p className="mt-0.5 text-[13px] text-muted">{tags.join(' · ')}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          {quarantined ? (
+            <p className="text-[13px] text-garnet">Under review</p>
+          ) : (
+            <p className="nums text-[15px] font-700">+{run.shards} shards</p>
+          )}
+          <p className="mt-0.5 text-[12px] text-muted">{daysAgo(run.startedAt)}</p>
+        </div>
+      </div>
+    </li>
+  )
+}
 
-  if (!player) return null
-
-  const anonymous = player.hasAccount === false
+/**
+ * The gear on the You tab opens this in place of the profile: the name you
+ * race under, the number you are verified as, and the way out.
+ */
+function Settings({ player, setNotice }) {
+  const { leave, rename } = useSession()
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(player.displayName)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  async function save(event) {
+    event.preventDefault()
+    const next = name.trim()
+    if (next === player.displayName) return setEditing(false)
+    setBusy(true)
+    setError(null)
+    try {
+      await rename(next)
+      setEditing(false)
+      setNotice({ tone: 'good', text: 'Name updated.' })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="px-6 pb-32 pt-6">
-      <div className="flex items-center gap-4">
-        <Shard size={34} tone={player.tier?.key ?? 'sapphire'} />
-        <div className="min-w-0">
-          <h2 className="display truncate text-[34px]">{player.displayName}</h2>
-          <p className="label mt-1 text-muted">{player.tier?.name}</p>
-        </div>
-      </div>
+      <h2 className="display text-[34px]">Settings</h2>
 
-      <div className="mt-8 flex items-end justify-between border-y border-rule py-6">
-        <div>
-          <Label>Rating</Label>
-          <p className="display mt-1.5 text-[56px]">{player.rating}</p>
-        </div>
-        <div className="text-right">
-          <Label>Record</Label>
-          <p className="display nums mt-1.5 text-[34px]">
-            {player.wins}–{player.losses}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-8">
-        <Label>Recent duels</Label>
-        {matches === null ? (
-          <div className="py-8"><Spinner /></div>
-        ) : matches.length === 0 ? (
-          <p className="mt-3 text-[15px] text-slate">
-            No duels yet. Head to the lobby and challenge someone.
-          </p>
+      <div className="mt-7 border-t border-rule">
+        {editing ? (
+          <form onSubmit={save} className="flex flex-col gap-3 border-b border-rule py-4">
+            <Label>Display name</Label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={24}
+              autoFocus
+              autoComplete="nickname"
+              aria-label="Display name"
+              className={field}
+            />
+            {error && <p className="text-[13px] text-garnet">{error}</p>}
+            <div className="flex gap-2">
+              <Button type="submit" disabled={busy || name.trim().length < 2}>
+                {busy ? 'Saving…' : 'Save'}
+              </Button>
+              <Button
+                type="button"
+                variant="quiet"
+                onClick={() => {
+                  setEditing(false)
+                  setName(player.displayName)
+                  setError(null)
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
         ) : (
-          <ul className="mt-4">
-            {matches.map((m, i) => {
-              const won = m.winnerId === player.id
-              const delta =
-                m.you.ratingAfter != null ? m.you.ratingAfter - m.you.ratingBefore : null
-              const terms = m.mode === 'timed'
-                ? formatDuration((m.durationMs ?? 0) / 60_000)
-                : distanceLabel(m.distanceM)
-              return (
-                <li key={m.id} className={i > 0 ? 'border-t border-rule' : ''}>
-                  <div className="flex min-h-[56px] items-center gap-4 py-3.5">
-                    <span className="label w-12 shrink-0 text-muted">
-                      {m.winnerId == null ? 'Tie' : won ? 'Win' : 'Loss'}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[15px]">
-                        {m.opponent.displayName}
-                      </p>
-                      <p className="nums text-[13px] text-muted">
-                        {terms}
-                        {m.mode === 'timed'
-                          ? ` · ${Math.round(m.you.progressM ?? 0)} m`
-                          : m.you.elapsedMs != null
-                            ? ` · ${clock(m.you.elapsedMs)}`
-                            : ''}
-                      </p>
-                    </div>
-                    {delta != null && (
-                      <span
-                        className={`nums shrink-0 text-[15px] font-700 ${
-                          delta >= 0 ? 'text-indigo' : 'text-garnet'
-                        }`}
-                      >
-                        {signed(delta)}
-                      </span>
-                    )}
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
+          <button
+            onClick={() => setEditing(true)}
+            className="flex min-h-[56px] w-full items-center justify-between gap-4 border-b border-rule py-2 text-left"
+          >
+            <span className="text-[15px]">Display name</span>
+            <span className="truncate text-[15px] text-slate">{player.displayName}</span>
+          </button>
         )}
       </div>
 
-      {anonymous && <SecureAccount player={player} setNotice={setNotice} />}
-
-      <div className="mt-10">
-        <Rule />
-        {player.phone && (
-          <p className="nums mt-4 text-[13px] text-muted">Verified as {player.phone}</p>
+      <div className="mt-10 border-t border-rule">
+        {player.verifiedAs && (
+          <p className="nums mt-4 text-[13px] text-muted">Verified as {player.verifiedAs}</p>
         )}
-        <Button
-          variant="quiet"
-          className="mt-4"
-          onClick={() => {
-            if (
-              !anonymous ||
-              confirm(
-                'This account has no verified number. Leaving deletes it — rating, record, all of it. Leave anyway?'
-              )
-            ) {
-              leave()
-            }
-          }}
-        >
-          {anonymous ? 'Leave' : 'Sign out'}
+        <Button variant="quiet" className="mt-4" onClick={leave}>
+          Sign out
         </Button>
       </div>
     </div>

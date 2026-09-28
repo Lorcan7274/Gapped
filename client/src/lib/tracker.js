@@ -37,12 +37,17 @@ export const REJECT_SPEED = 'speed'
  * is added to the total.
  *
  * The first accepted fix only anchors the trail; it adds no distance.
+ * `onFix` sees every raw fix, for recording the run.
  */
-export function createTracker({ onUpdate, onError } = {}) {
+export function createTracker({ onUpdate, onError, onFix } = {}) {
   let watchId = null
   let previous = null
   let total = 0
   let startedAt = null
+  // Times (from the fixes themselves) of the first and latest accepted fix:
+  // a ghost race is clocked from the first, exactly as the server times it.
+  let firstFixAt = null
+  let lastFixAt = null
   let accepted = 0
   let rejected = 0
   let rejectedAccuracy = 0
@@ -62,6 +67,8 @@ export function createTracker({ onUpdate, onError } = {}) {
       accuracy: lastAccuracy,
       lastRejection,
       elapsedMs: startedAt ? Date.now() - startedAt : 0,
+      firstFixAt,
+      lastFixAt,
       paceMsPerKm: paceMsPerKm(),
       running: watchId != null,
     })
@@ -84,9 +91,13 @@ export function createTracker({ onUpdate, onError } = {}) {
   }
 
   function handle(position) {
-    const { latitude: lat, longitude: lng, accuracy } = position.coords
+    const { latitude: lat, longitude: lng, accuracy, altitude } = position.coords
     const at = position.timestamp
     lastAccuracy = accuracy
+    // Every raw fix goes to the recording before any filtering: the server
+    // recomputes distance from these with the same filter, and never trusts
+    // the totals this phone shows.
+    onFix?.({ t: at, lat, lng, acc: accuracy, alt: altitude ?? null })
 
     if (accuracy > MAX_ACCURACY_M) {
       rejected += 1
@@ -112,6 +123,7 @@ export function createTracker({ onUpdate, onError } = {}) {
         // Jitter floor: keep the anchor where it is. The trail still gets a
         // point so the pace window sees time passing without movement.
         accepted += 1
+        lastFixAt = at
         lastRejection = null
         remember(at)
         emit()
@@ -120,6 +132,8 @@ export function createTracker({ onUpdate, onError } = {}) {
       total += step
     }
 
+    if (firstFixAt == null) firstFixAt = at
+    lastFixAt = at
     previous = point
     accepted += 1
     lastRejection = null
@@ -166,6 +180,8 @@ export function createTracker({ onUpdate, onError } = {}) {
       rejectedSpeed = 0
       lastAccuracy = null
       lastRejection = null
+      firstFixAt = null
+      lastFixAt = null
       trail = []
       startedAt = watchId != null ? Date.now() : null
       emit()

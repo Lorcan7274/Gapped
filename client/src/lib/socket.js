@@ -1,9 +1,9 @@
 /**
- * Auto-reconnecting WebSocket keyed on the stored player id.
+ * Auto-reconnecting WebSocket authenticated by the session token.
  * Mobile data drops constantly, so reconnection is the normal case, not an
- * error path: we back off, jitter, and resume with the same id.
+ * error path: we back off, jitter, and resume with the same token.
  */
-export function createSocket({ playerId, token, onMessage, onStatus, onDeadPlayer }) {
+export function createSocket({ token, onMessage, onStatus, onDeadPlayer }) {
   let ws = null
   let attempt = 0
   let heartbeat = null
@@ -12,10 +12,7 @@ export function createSocket({ playerId, token, onMessage, onStatus, onDeadPlaye
 
   const url = () => {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
-    const credential = token
-      ? `token=${encodeURIComponent(token)}`
-      : `playerId=${encodeURIComponent(playerId)}`
-    return `${scheme}://${location.host}/ws?${credential}`
+    return `${scheme}://${location.host}/ws?token=${encodeURIComponent(token)}`
   }
 
   function connect() {
@@ -42,8 +39,8 @@ export function createSocket({ playerId, token, onMessage, onStatus, onDeadPlaye
       clearInterval(heartbeat)
       if (closedByUs) return onStatus('closed')
 
-      // 1008 is what the server sends when it does not know this player —
-      // reconnecting forever with a dead id would spin.
+      // 1008 is what the server sends for a dead session — reconnecting
+      // forever with it would spin.
       if (event.code === 1008) {
         onStatus('rejected')
         onDeadPlayer?.()

@@ -1,63 +1,21 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import Fastify from 'fastify'
 import fastifyStatic from '@fastify/static'
 
-import { PORT, HOST, DATABASE_PATH, IS_PRODUCTION } from './config.js'
-import { MIGRATED } from './db/index.js'
-import { getPlayer, touchPlayer, hasPhone } from './db/players.js'
-import { resolveSession, purgeExpiredSessions } from './db/sessions.js'
-import { purgeExpiredAuthCodes } from './db/authCodes.js'
-import authRoutes from './routes/auth.js'
-import joinRoutes from './routes/join.js'
-import playerRoutes from './routes/players.js'
+import { PORT, HOST, DATABASE_PATH, IS_PRODUCTION } from './config/env.js'
+import { APPLIED_MIGRATIONS } from './db/index.js'
+import { purgeExpired } from './auth/index.js'
+import { buildApp } from './app.js'
 import { createHub } from './ws/hub.js'
+import { startSundayJob } from './jobs/sunday.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const clientDist = path.join(here, '..', 'client', 'dist')
 
-const app = Fastify({
-  logger: {
-    level: process.env.LOG_LEVEL || (IS_PRODUCTION ? 'info' : 'debug'),
-    ...(IS_PRODUCTION ? {} : { transport: undefined }),
-  },
-  trustProxy: true,
+const app = await buildApp({
+  logger: { level: process.env.LOG_LEVEL || (IS_PRODUCTION ? 'info' : 'debug') },
 })
-
-/* --------------------------------------------------------------- identity */
-
-// Who is calling, or null. A session token from sign-in is the credential.
-// The bare player id — the x-player-id header, or playerId in the body — is
-// still accepted for accounts created before sign-in existed, so nobody is
-// locked out of a rating they already earned; it stops working for an
-// account the moment it gains a verified number.
-app.decorate('resolvePlayer', (request) => {
-  const token = request.headers.authorization?.replace(/^Bearer\s+/i, '')
-  const session = resolveSession(token)
-  const player = session ? getPlayer(session.player_id) : null
-  if (player) return player
-
-  const legacyId = request.headers['x-player-id'] || request.body?.playerId
-  // getPlayer omits the phone by design, so ask the database directly.
-  const candidate = getPlayer(legacyId)
-  return candidate && !hasPhone(candidate.id) ? candidate : null
-})
-
-// The guard for routes that need a caller. A 404 (not 401) tells the client
-// the credential is dead and it should clear storage and show the join
-// screen again.
-app.decorate('requirePlayer', async (request, reply) => {
-  const player = app.resolvePlayer(request)
-  if (!player) {
-    return reply
-      .code(404)
-      .send({ error: 'That player no longer exists. Join again.', code: 'unknown_player' })
-  }
-  touchPlayer(player.id)
-  request.player = player
-})
-app.decorateRequest('player', null)
 
 /* --------------------------------------------------------------- routes */
 
@@ -77,13 +35,8 @@ app.get('/api/health', async () => ({
   build: BUILD,
 }))
 
-// The hub is created before the routes so a join can push the new player
-// list straight out over the sockets.
+// Live friend duels run over the WebSocket hub; everything else is HTTP.
 const hub = createHub(app.log)
-
-await app.register(authRoutes(() => hub.broadcastPlayers()))
-await app.register(joinRoutes(() => hub.broadcastPlayers()))
-await app.register(playerRoutes)
 
 /* ------------------------------------------------- static Vite frontend */
 
@@ -124,14 +77,15 @@ app.server.on('upgrade', (request, socket, head) => {
 
 /* -------------------------------------------------------------- startup */
 
-const housekeeping = setInterval(() => {
-  purgeExpiredSessions()
-  purgeExpiredAuthCodes()
-}, 3_600_000)
+const housekeeping = setInterval(purgeExpired, 3_600_000)
 housekeeping.unref()
+
+// Sunday night settles every duel still open; checked every minute.
+const stopSunday = startSundayJob(app.log)
 
 async function shutdown(signal) {
   clearInterval(housekeeping)
+  stopSunday()
   app.log.info({ signal }, 'shutting down')
   hub.close()
   await app.close()
@@ -142,7 +96,12 @@ process.on('SIGINT', () => shutdown('SIGINT'))
 
 try {
   await app.listen({ port: PORT, host: HOST })
-  if (MIGRATED) app.log.warn('database was migrated off a legacy players schema')
+  if (APPLIED_MIGRATIONS.length > 0) {
+    app.log.warn(
+      { migrations: APPLIED_MIGRATIONS.map((m) => `${m.version}_${m.name}`) },
+      'database migrated'
+    )
+  }
   app.log.info({ port: PORT, database: DATABASE_PATH }, 'gapped is up')
 } catch (error) {
   app.log.error(error, 'failed to start')

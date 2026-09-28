@@ -1,7 +1,6 @@
 // The storage keys were renamed gap.* → gapped.* along with the app. Carry
-// old values across before anything reads them: for a legacy anonymous
-// account the stored id is the only credential there is, so dropping it
-// would delete the account outright.
+// old values across before anything reads them, so a signed-in phone stays
+// signed in.
 try {
   for (const key of ['player', 'token', 'theme', 'country']) {
     const value = localStorage.getItem(`gap.${key}`)
@@ -72,16 +71,14 @@ export class ApiError extends Error {
 }
 
 // Same origin as the frontend, so relative URLs are all we need.
-export async function api(path, { method = 'GET', body, playerId, token } = {}) {
-  // Prefer the session token; the player id is only still sent so accounts
-  // created before sign-in existed keep working.
+export async function api(path, { method = 'GET', body, token } = {}) {
+  // The session token is the only credential; a player id proves nothing.
   const bearer = token ?? readToken()
   const res = await fetch(path, {
     method,
     headers: {
       ...(body ? { 'content-type': 'application/json' } : {}),
       ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
-      ...(playerId ? { 'x-player-id': playerId } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   })

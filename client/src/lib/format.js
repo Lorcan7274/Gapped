@@ -19,6 +19,13 @@ export function clock(ms) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+/** A time difference with a true sign: +0:12, −1:03, ±0:00. */
+export function signedClock(ms) {
+  if (ms == null || !Number.isFinite(ms)) return '—:—'
+  const sign = Math.round(ms / 1000) === 0 ? '±' : ms > 0 ? '+' : '−'
+  return `${sign}${clock(Math.abs(ms))}`
+}
+
 export function preciseClock(ms) {
   if (ms == null || !Number.isFinite(ms)) return '—:—.—'
   const tenths = Math.floor((Math.max(0, ms) % 1000) / 100)
@@ -41,4 +48,22 @@ export function ago(timestamp) {
   if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`
   if (seconds < 86_400) return `${Math.round(seconds / 3600)}h ago`
   return `${Math.round(seconds / 86_400)}d ago`
+}
+
+/**
+ * Coarse calendar distance for history: Today, Yesterday, 3d ago, 2w ago,
+ * 4mo ago. Counted in local calendar days, so last night is Yesterday.
+ */
+export function daysAgo(timestamp) {
+  if (!timestamp) return ''
+  const day = (t) => {
+    const d = new Date(t)
+    return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000
+  }
+  const days = Math.max(0, day(Date.now()) - day(timestamp))
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return `${days}d ago`
+  if (days < 30) return `${Math.floor(days / 7)}w ago`
+  return `${Math.floor(days / 30)}mo ago`
 }

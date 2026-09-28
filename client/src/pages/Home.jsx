@@ -1,187 +1,130 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSession } from '../state/session.jsx'
-import { getCurrentPosition } from '../lib/tracker.js'
-import { formatsFrom, formatDetail, challengePayload, describe } from '../lib/duelTypes.js'
-import Crystal, { Shard } from '../components/Crystal.jsx'
+import { run } from '../lib/run.js'
+import { api } from '../lib/api.js'
+import Duels from './Duels.jsx'
+import Crystal from '../components/Crystal.jsx'
 import TierLadder from '../components/TierLadder.jsx'
-import DuelSetup from '../components/DuelSetup.jsx'
-import { Button, Label, Rule, Spinner } from '../components/ui.jsx'
+import { Button, Label } from '../components/ui.jsx'
 
+const PRIVATE_KEY = 'gapped.privateRuns'
+
+const readPrivate = () => {
+  try {
+    return localStorage.getItem(PRIVATE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The Run tab: your crystal and your week, and the one button that matters.
+ * The big number is this week's pool points — the visible competitive
+ * number. Solo runs always pay and never cost; private is a toggle, not a
+ * mode, and a private run pays exactly the same.
+ */
 export default function Home() {
-  const {
-    player, players, meta, send, setNotice, pushLocation,
-    queued, joinQueue, leaveQueue,
-  } = useSession()
-  const [formatKey, setFormatKey] = useState('race')
+  const { player } = useSession()
   const [ladderOpen, setLadderOpen] = useState(false)
-  const [setup, setSetup] = useState(null)
+  const [keepPrivate, setKeepPrivate] = useState(readPrivate)
+  const [duelsOpen, setDuelsOpen] = useState(false)
+  const [replies, setReplies] = useState([])
 
+  // Challenges waiting on you. No push yet, so look when the tab shows, and
+  // now and then while it stays open.
   useEffect(() => {
-    let cancelled = false
-    getCurrentPosition()
-      .then((coords) => !cancelled && pushLocation(coords))
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [pushLocation])
-
-  // The nemesis is your closest rival you could race right now: nearest on
-  // rating, online, and inside the challenge radius. distanceM is null when
-  // either side has no location, which also rules a runner out.
-  const nemesis = useMemo(() => {
-    const radiusM = meta?.discovery?.radiusM ?? 5000
-    const rivals = players.filter(
-      (p) =>
-        p.id !== player?.id &&
-        p.online &&
-        p.distanceM != null &&
-        p.distanceM <= radiusM
-    )
-    if (rivals.length === 0) return null
-    return [...rivals].sort(
-      (a, b) => (a.ratingGap ?? Infinity) - (b.ratingGap ?? Infinity)
-    )[0]
-  }, [players, player?.id, meta])
+    if (!player?.id || duelsOpen) return
+    const look = () =>
+      api('/api/duels').then((d) => setReplies(d.duels.filter((x) => x.yourTurn))).catch(() => {})
+    look()
+    const timer = setInterval(look, 60_000)
+    return () => clearInterval(timer)
+  }, [player?.id, duelsOpen])
 
   if (!player) return null
+  const tier = player.tier ?? { key: 'bronze', label: 'Bronze' }
 
-  // While searching, the live search is the selection — the dot must not
-  // drift from what the server is actually matching.
-  const formats = formatsFrom(meta)
-  const activeKey = queued ?? formatKey
-  const selected = formats.find((f) => f.key === activeKey) ?? formats[0]
-
-  /** A direct challenge — the only place the full custom menu lives. */
-  function confirm(shape) {
-    const opponent = setup?.opponent
-    setSetup(null)
-    if (!opponent) return
-    // send() is false when the socket is down — nothing reached the server,
-    // so claiming "sent" would leave them waiting on a challenge nobody got.
-    const sent = send('challenge', challengePayload(opponent.id, shape))
-    setNotice(sent
-      ? { tone: 'good', text: `Challenge sent · ${describe(shape)}` }
-      : { tone: 'bad', text: 'Not connected. Try again in a moment.' })
-  }
-
-  function search(key) {
-    if (!joinQueue(key)) {
-      setNotice({ tone: 'bad', text: 'Not connected. Try again in a moment.' })
+  function togglePrivate() {
+    const next = !keepPrivate
+    setKeepPrivate(next)
+    try {
+      localStorage.setItem(PRIVATE_KEY, next ? '1' : '0')
+    } catch {
+      /* remembered for this visit only */
     }
-  }
-
-  function chooseFormat(key) {
-    setFormatKey(key)
-    // Switching format mid-search moves the search, not just the dot.
-    if (queued && queued !== key) search(key)
   }
 
   return (
     <div className="flex flex-1 flex-col px-6 pt-2">
-      {/* Crystal and rating are one thing — one tap opens the full ladder. */}
+      {/* Crystal and week are one thing — one tap opens the ladder. */}
       <button
         onClick={() => setLadderOpen(true)}
-        aria-label="See all ranks"
+        aria-label="See the ladder"
         className="flex w-full flex-col items-center gap-1.5 pt-3 text-center"
       >
-        <Crystal size={66} tone={player.tier?.key ?? 'sapphire'} />
-        <Label className="mt-6">Rating</Label>
-        <p className="display text-[72px]">{player.rating}</p>
-        <p className="label-13 label text-ink">{player.tier?.name}</p>
-        <p className="text-[13px] text-slate">Tap for all ranks</p>
+        <Crystal size={62} tone={tier.key} />
+        <Label className="mt-3">This week</Label>
+        <p className="display num-glow text-[62px]">{player.weekPoints ?? 0}</p>
+        <p className="label-13 label text-ink">{tier.label}</p>
+        <p className="text-[13px] text-slate">points · tap for the ladder</p>
       </button>
 
-      {/* Nemesis */}
-      <div className="mt-6">
-        <Rule />
-        {nemesis ? (
-          <div className="flex items-center gap-4 py-4">
-            <Shard size={22} tone="garnet" />
-            <div className="min-w-0 flex-1">
-              <Label className="text-garnet">Nemesis</Label>
-              <p className="mt-1 truncate text-[17px] font-700 text-ink">
-                {nemesis.displayName}
-              </p>
-              <p className="nums text-[13px] text-muted">
-                {nemesis.rating} · {nemesis.ratingGap ?? 0} apart
-              </p>
-            </div>
-            <button
-              onClick={() => setSetup({ opponent: nemesis })}
-              className="btn btn-outline w-auto shrink-0 px-6 text-[13px]"
-            >
-              Challenge
-            </button>
-          </div>
-        ) : (
-          <p className="py-4 text-[15px] text-slate">
-            {players.length > 1
-              ? 'No nemesis right now. Nobody close by is online.'
-              : 'No nemesis yet. Nobody else has joined.'}
-          </p>
-        )}
-        <Rule />
+      <div className="mt-6 grid grid-cols-3 border-y border-rule">
+        <Stat label="Shards" value={player.shards ?? 0} />
+        <Stat label="Fuel" value={player.fuel ?? 0} divided />
+        <Stat label="Streak" value={player.streak ? `${player.streak}d` : '—'} divided />
       </div>
 
-      {/* Quick match: two fixed formats, nothing to tune. Custom shapes live
-          behind a direct challenge, so the random pool never splinters. */}
-      <div className="mt-1">
-        {formats.map((option, i) => (
-          <div key={option.key}>
-            {i > 0 && <Rule />}
-            <button
-              onClick={() => chooseFormat(option.key)}
-              className="flex min-h-[56px] w-full items-center gap-4 py-3 text-left"
-            >
-              <span
-                className={`size-2.5 shrink-0 rounded-full ${
-                  activeKey === option.key ? 'bg-indigo' : 'border border-muted'
-                }`}
-              />
-              <span className="flex-1">
-                <span
-                  className={`block text-[16px] ${
-                    activeKey === option.key ? 'font-700 text-ink' : 'text-muted'
-                  }`}
-                >
-                  {option.name ?? option.key}
-                </span>
-                <span className="block text-[13px] text-muted">{option.blurb}</span>
-              </span>
-              <span className="nums text-[13px] text-muted">{formatDetail(option)}</span>
-            </button>
-          </div>
-        ))}
-        <Rule />
-      </div>
+      {replies.length > 0 && (
+        <button
+          onClick={() => setDuelsOpen(true)}
+          className="flex min-h-[56px] w-full items-center justify-between gap-4 border-b border-rule text-left"
+        >
+          <span className="text-[15px]">
+            {replies.length === 1
+              ? `${replies[0].opponent?.displayName} challenged you`
+              : `${replies.length} challenges waiting on you`}
+          </span>
+          <span className="label text-garnet">Reply by Sunday</span>
+        </button>
+      )}
 
-      <div className="mt-auto flex flex-col gap-2.5 pt-7">
-        {queued ? (
-          <Button variant="outline" onClick={leaveQueue}>
-            <Spinner />
-            Searching · tap to cancel
-          </Button>
-        ) : (
-          <Button onClick={() => search(selected.key)}>
-            <span className="size-2 rounded-full bg-indigo" />
-            Find duel
-          </Button>
-        )}
+      <div className="mt-auto flex flex-col gap-2.5 py-3.5">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={keepPrivate}
+          onClick={togglePrivate}
+          className="flex min-h-[56px] w-full items-center justify-between gap-4 text-left"
+        >
+          <span>
+            <span className="block text-[15px]">Private run</span>
+            <span className="block text-[13px] text-muted">
+              Pays the same, never shown to your pool
+            </span>
+          </span>
+          <span className={`switch ${keepPrivate ? 'is-on' : ''}`} aria-hidden="true">
+            <span className="switch__knob" />
+          </span>
+        </button>
+        <Button onClick={() => run.start({ private: keepPrivate })}>Start run</Button>
+        <Button variant="outline" onClick={() => setDuelsOpen(true)}>Duel</Button>
         <p className="text-center text-[13px] text-muted">
-          {selected.name ?? selected.key} · {formatDetail(selected)} · match within{' '}
-          {meta?.discovery?.ratingSpread ?? 250} rating
+          A solo run always pays and never costs. A duel races someone’s ghost for points.
         </p>
       </div>
 
       {ladderOpen && <TierLadder onClose={() => setLadderOpen(false)} />}
-      {setup && (
-        <DuelSetup
-          opponent={setup.opponent}
-          onConfirm={confirm}
-          onClose={() => setSetup(null)}
-        />
-      )}
+      {duelsOpen && <Duels onClose={() => setDuelsOpen(false)} />}
+    </div>
+  )
+}
+
+function Stat({ label, value, divided = false }) {
+  return (
+    <div className={`flex flex-col items-center gap-1 py-4 ${divided ? 'border-l border-rule' : ''}`}>
+      <Label>{label}</Label>
+      <span className="display nums text-[28px]">{value}</span>
     </div>
   )
 }

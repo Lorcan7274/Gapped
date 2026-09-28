@@ -7,10 +7,9 @@ import { Shard } from './Crystal.jsx'
 import { Button, Label, Rule } from './ui.jsx'
 
 /**
- * Pick the shape of a direct challenge. Opened from the nemesis Challenge
- * button and the lobby's Duel button — always aimed at a named opponent,
- * and only here is the full menu of distances and durations on offer.
- * Quick match runs two fixed formats instead (see Home).
+ * Pick the shape of a live friend duel: a race to a distance or most metres
+ * in a time. Live duels move no points and no hidden rating. Reached from
+ * the Friends tab once it exists (phase 5).
  */
 export default function DuelSetup({ opponent, onConfirm, onClose }) {
   const { meta } = useSession()
@@ -46,8 +45,8 @@ export default function DuelSetup({ opponent, onConfirm, onClose }) {
             className="flex min-h-[56px] w-full items-center gap-4 py-4 text-left"
           >
             <span
-              className={`size-2.5 shrink-0 rounded-full ${
-                type === option.key ? 'bg-indigo' : 'border border-muted'
+              className={`size-2.5 shrink-0 rounded-full border ${
+                type === option.key ? 'border-ink bg-ink' : 'border-muted'
               }`}
             />
             <span className="flex-1">
