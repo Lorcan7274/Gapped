@@ -36,9 +36,13 @@ const as = (who) => (method, url, payload) =>
 const giveFuel = (who, fuel) => db.prepare('UPDATE players SET fuel = ? WHERE id = ?').run(fuel, ids[who])
 const mmr = (who) => db.prepare('SELECT mmr FROM players WHERE id = ?').get(ids[who]).mmr
 const duelRow = (id) => db.prepare('SELECT * FROM duels WHERE id = ?').get(id)
-/** The leg began before the run did: tests cannot wait half an hour for real. */
-const backdate = (duelId, leg) =>
-  db.prepare(`UPDATE duels SET leg${leg}_started_at = ? WHERE id = ?`).run(Date.now() - 3 * 3_600_000, duelId)
+/**
+ * The leg began just before the run did: tests cannot wait half an hour for
+ * real. `opts` are the track() options of the run that follows.
+ */
+const backdate = (duelId, leg, { seconds = 1800, endAgoMs = 60_000 } = {}) =>
+  db.prepare(`UPDATE duels SET leg${leg}_started_at = ? WHERE id = ?`)
+    .run(Date.now() - endAgoMs - seconds * 1000 - 1000, duelId)
 
 async function signUp(who, phone) {
   const { devCode } = (await app.inject({ method: 'POST', url: '/api/auth/request-code', payload: { phone } })).json()
@@ -193,7 +197,7 @@ test('quitting leg one withdraws: no points, and it never gains rating', async (
   const aoifeRun = (await as('Aoife')('POST', '/api/runs', { track: track({ endAgoMs: 5 * 3_600_000 }) })).json().run
   giveFuel('Rowan', 50)
   const { duel } = (await as('Rowan')('POST', '/api/duels', { runId: aoifeRun.id })).json()
-  backdate(duel.id, 1)
+  backdate(duel.id, 1, { seconds: 600, endAgoMs: 20_000 })
   const before = mmr('Rowan')
   const res = await as('Rowan')('POST', '/api/runs', {
     track: track({ seconds: 600, endAgoMs: 20_000 }), duelId: duel.id, quit: true,
@@ -222,7 +226,7 @@ test('starting a new duel walks away from a leg left running', async () => {
 test('Sunday night: an ignored challenge is a walkover, a reply left running is a quit', async () => {
   // Fionn's open duel against Rowan: leg one in, then Rowan ignores it.
   const open = db.prepare("SELECT id FROM duels WHERE challenger_id = ? AND status = 'leg1'").get(ids.Fionn)
-  backdate(open.id, 1)
+  backdate(open.id, 1, { endAgoMs: 10_000 })
   await as('Fionn')('POST', '/api/runs', { track: track({ speed: 3, endAgoMs: 10_000 }), duelId: open.id })
   assert.equal(duelRow(open.id).status, 'awaiting')
 
@@ -230,7 +234,7 @@ test('Sunday night: an ignored challenge is a walkover, a reply left running is 
   giveFuel('Aoife', 50)
   const fionnSolo = db.prepare("SELECT id FROM runs WHERE player_id = ? AND kind = 'solo' AND private = 0 AND distance_m > 1000 ORDER BY started_at DESC LIMIT 1").get(ids.Fionn)
   const second = (await as('Aoife')('POST', '/api/duels', { runId: fionnSolo.id })).json().duel
-  backdate(second.id, 1)
+  backdate(second.id, 1, { endAgoMs: 5_000 })
   await as('Aoife')('POST', '/api/runs', { track: track({ speed: 3.4, endAgoMs: 5_000 }), duelId: second.id })
   const replied = await as('Fionn')('POST', `/api/duels/${second.id}/reply`)
   assert.equal(replied.statusCode, 200, replied.body + JSON.stringify(duelRow(second.id)))
@@ -260,17 +264,22 @@ test('Sunday night: an ignored challenge is a walkover, a reply left running is 
   assert.ok(quit.target_mmr_delta <= 0, 'a quitter never gains')
 })
 
-test('a flagged leg voids the duel and refunds the challenger', async () => {
+test('a flagged leg counts as a quit: never better than quitting, and the Fuel stays spent', async () => {
   giveFuel('Aoife', 30)
   const rowanRun = db.prepare("SELECT id FROM runs WHERE player_id = ? AND kind = 'solo' AND private = 0 ORDER BY started_at LIMIT 1").get(ids.Rowan)
   const { duel } = (await as('Aoife')('POST', '/api/duels', { runId: rowanRun.id })).json()
   assert.equal(db.prepare('SELECT fuel FROM players WHERE id = ?').get(ids.Aoife).fuel, 30 - DUEL.fuelCost)
-  backdate(duel.id, 1)
+  backdate(duel.id, 1, { seconds: 900, endAgoMs: 1_000 })
+  const before = mmr('Aoife')
   const res = await as('Aoife')('POST', '/api/runs', { track: track({ seconds: 900, speed: 8, endAgoMs: 1_000 }), duelId: duel.id })
   assert.equal(res.json().run.status, 'quarantined')
-  assert.equal(res.json().duel.status, 'void')
+  assert.equal(res.json().run.kind, 'duel')
+  assert.equal(res.json().duel.status, 'settled')
+  assert.equal(res.json().duel.result.outcome, 'withdrawn')
   assert.equal(res.json().duel.result.points, 0)
-  assert.equal(res.json().player.fuel, 30)
+  assert.equal(res.json().player.fuel, 30 - DUEL.fuelCost, 'no refund')
+  assert.ok(mmr('Aoife') <= before, 'a flagged leg never gains rating')
+  assert.ok(!JSON.stringify(res.json()).includes('flag'), 'quiet: no labels')
 })
 
 test('a run is raced once, and only while the feed would offer it', async () => {
@@ -305,14 +314,14 @@ test('a leg running across Sunday midnight is not cut off', async (t) => {
   giveFuel('Rowan', 30)
   const challenge = (await as('Aoife')('POST', '/api/duels', { runId: ghostA.id })).json().duel
   const reply = (await as('Rowan')('POST', '/api/duels', { runId: ghostB.id })).json().duel
-  backdate(reply.id, 1)
+  backdate(reply.id, 1, { endAgoMs: 2_000 })
   await as('Rowan')('POST', '/api/runs', { track: track({ speed: 3.2, endAgoMs: 2_000 }), duelId: reply.id })
   assert.equal((await as('Fionn')('POST', `/api/duels/${reply.id}/reply`)).statusCode, 200)
 
-  // Both legs began at 23:20 on the duel's Sunday.
+  // Both legs began at 23:54 on the duel's Sunday.
   const midnight = nextWeekStart(Date.now())
-  db.prepare('UPDATE duels SET leg1_started_at = ? WHERE id = ?').run(midnight - 40 * 60_000, challenge.id)
-  db.prepare('UPDATE duels SET leg2_started_at = ? WHERE id = ?').run(midnight - 40 * 60_000, reply.id)
+  db.prepare('UPDATE duels SET leg1_started_at = ? WHERE id = ?').run(midnight - 6 * 60_000, challenge.id)
+  db.prepare('UPDATE duels SET leg2_started_at = ? WHERE id = ?').run(midnight - 6 * 60_000, reply.id)
   assert.equal(settleDue(midnight + 60_000), 0, 'midnight does not cut off a leg still running')
   assert.equal(duelRow(challenge.id).status, 'leg1')
   assert.equal(duelRow(reply.id).status, 'leg2')
@@ -333,4 +342,16 @@ test('a leg running across Sunday midnight is not cut off', async (t) => {
   assert.equal(replied.run.kind, 'duel')
   assert.equal(replied.duel.status, 'settled')
   assert.equal(replied.duel.legs.target.quit, false)
+})
+
+test('a leg is one attempt: a run started long after the leg began counts as solo', async () => {
+  const fionnGhost = (await as('Fionn')('POST', '/api/runs', { track: track({ endAgoMs: 16 * 3_600_000 }) })).json().run
+  giveFuel('Rowan', 30)
+  const { duel } = (await as('Rowan')('POST', '/api/duels', { runId: fionnGhost.id })).json()
+  // The leg began an hour before this run: other attempts could have come between.
+  db.prepare('UPDATE duels SET leg1_started_at = ? WHERE id = ?').run(Date.now() - 3_600_000 - 1_860_000, duel.id)
+  const best = await as('Rowan')('POST', '/api/runs', { track: track({ speed: 3.5 }), duelId: duel.id })
+  assert.equal(best.json().run.kind, 'solo')
+  assert.equal(best.json().duelClosed, true)
+  assert.equal(duelRow(duel.id).status, 'leg1')
 })

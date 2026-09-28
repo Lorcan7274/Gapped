@@ -162,11 +162,11 @@ function quitLeg(duel, playerId, at) {
 /**
  * Store a leg's run (paid like any run) and put it on the duel, settling the
  * duel if that decides it. `leg` is 1 or 2; `ms` is the time to cover the
- * duel distance, or null for a quit. A flagged run voids the duel, and so
- * does a first leg that finished only after its week was over (run across
- * Sunday midnight): there is no week left for the reply.
+ * duel distance, or null for a quit (a flagged run comes in as one). A first
+ * leg that finished only after its week was over (run across Sunday
+ * midnight) voids the duel: there is no week left for the reply.
  */
-export const recordLeg = db.transaction(({ duelId, leg, ms, quarantined, runInput, at = now() }) => {
+export const recordLeg = db.transaction(({ duelId, leg, ms, runInput, at = now() }) => {
   const duel = getDuel(duelId)
   if (!duel || duel.status !== (leg === 1 ? 'leg1' : 'leg2') || (leg === 1 && duel.leg1_quit)) {
     throw new DuelError('duel_closed', 'That duel has already been settled.')
@@ -176,7 +176,7 @@ export const recordLeg = db.transaction(({ duelId, leg, ms, quarantined, runInpu
   if (leg === 1) setLeg1.run({ id: duelId, run: run.id, ms: quit ? null : Math.round(ms), quit })
   else setLeg2.run({ id: duelId, run: run.id, ms: quit ? null : Math.round(ms), quit })
   const tooLate = leg === 1 && !quit && weekOf(at) > duel.week
-  if (quarantined || tooLate) voidDuel(duelId, at)
+  if (tooLate) voidDuel(duelId, at)
   else settle(duelId, at)
   return { run, duel: getDuel(duelId) }
 })

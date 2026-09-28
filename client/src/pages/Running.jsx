@@ -147,9 +147,7 @@ function LegResult({ result }) {
       <>
         <Label>Duel off</Label>
         <p className="mt-3 text-[15px] leading-relaxed text-slate">
-          {saved.status === 'quarantined'
-            ? 'Something about this run looked off, so the duel will not count.'
-            : `The week ended before ${name} could reply, so the duel will not count.`}{' '}
+          The week ended before {name} could reply, so the duel will not count.
           Nobody gains or loses anything{duel.role === 'challenger' ? ', and your Fuel is back' : ''}.
         </p>
       </>
@@ -187,7 +185,9 @@ function LegResult({ result }) {
       <>
         <Label>Duel withdrawn</Label>
         <p className="mt-3 text-[15px] leading-relaxed text-slate">
-          You quit before the line, so the challenge never went to {name}.
+          {saved.status === 'quarantined'
+            ? `Something about this run looked off, so it counts as a quit and the challenge never went to ${name}.`
+            : `You quit before the line, so the challenge never went to ${name}.`}
         </p>
       </>
     )

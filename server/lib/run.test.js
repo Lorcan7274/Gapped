@@ -139,7 +139,9 @@ describe('streaks', () => {
     assert.equal(streakMultiplier(1), 1)
     assert.equal(streakMultiplier(3), 1 + 2 * STREAK.bonusPerDay)
     assert.equal(streakMultiplier(100), 1 + STREAK.maxBonusDays * STREAK.bonusPerDay)
-    assert.equal(countsForStreak(STREAK.minMinutes - 1), false)
+    assert.equal(countsForStreak(STREAK.minMinutes - 1, 5000), false)
+    assert.equal(countsForStreak(STREAK.minMinutes, STREAK.minDistanceM), true)
+    assert.equal(countsForStreak(60, 0), false, 'a phone left on a table is not a run')
   })
 })
 

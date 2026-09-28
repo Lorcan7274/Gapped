@@ -17,7 +17,8 @@ const RUN_BODY_LIMIT = 8 * 1024 * 1024
 /**
  * Which leg of which duel an uploaded run is, or null if it is not one —
  * the duel has settled (Sunday passed, or the leg was walked away from), or
- * the run started before the leg did or after the duel's week was over. A
+ * the run started before the leg did, well after it (another attempt), or
+ * after the duel's week was over. A
  * run that cannot be a leg is still a run: it is stored and paid as solo.
  */
 function legFor(duelId, playerId, startedAt) {
@@ -30,7 +31,8 @@ function legFor(duelId, playerId, startedAt) {
     : null
   if (!leg) return null
   const legStart = leg === 1 ? duel.leg1_started_at : duel.leg2_started_at
-  if (startedAt < legStart - DUEL.startSlackMs) return null
+  // One attempt per leg: the run that began when the leg did, not the best of several.
+  if (startedAt < legStart - DUEL.startSlackMs || startedAt > legStart + DUEL.startWindowMs) return null
   // Running across Sunday midnight is fine; starting after it is not.
   if (weekOf(startedAt - DUEL.startSlackMs) > duel.week) return null
   return { duel, leg }
@@ -45,7 +47,7 @@ export default async function runRoutes(app) {
    *
    * Solo never costs anything: a flagged run is stored and settles unranked
    * — it pays nothing and is marked for review — but it takes nothing away
-   * either. A flagged duel leg voids the duel. The phone retries uploads, so
+   * either. A flagged duel leg counts as a quit. The phone retries uploads, so
    * the same run twice returns the first.
    */
   app.post('/api/runs', { preHandler: app.requirePlayer, bodyLimit: RUN_BODY_LIMIT }, async (request, reply) => {
@@ -82,7 +84,7 @@ export default async function runRoutes(app) {
     const quarantined = summary.flags.length > 0
     const effort = intensity(player.mmr, summary.distanceM, summary.elapsedMs)
     const before = { days: player.streak_days, lastDay: player.streak_last_day }
-    const streak = !quarantined && countsForStreak(minutes) ? nextStreak(before, day) : before
+    const streak = !quarantined && countsForStreak(minutes, summary.distanceM) ? nextStreak(before, day) : before
     const rewards = quarantined
       ? { shards: 0, fuel: 0, points: 0 }
       : soloRewards({ minutes, intensity: effort, streakDays: streak.days, today: earnedOn(playerId, day) })
@@ -116,13 +118,15 @@ export default async function runRoutes(app) {
     let duel = null
     if (leg) {
       // A leg is timed to the duel's distance. One that stops short is a
-      // quit, and so is one the runner ended on purpose before the line.
+      // quit, and so is one the runner ended on purpose before the line —
+      // and so is a flagged one, quietly: tripping a flag is never better
+      // than quitting, and the opponent still gets their result.
       const reached = profile.at(-1)?.[1] ?? 0
-      const ms = request.body?.quit && reached < leg.duel.distance_m
+      const ms = quarantined || (request.body?.quit && reached < leg.duel.distance_m)
         ? null
         : timeToCover(profile, leg.duel.distance_m)
       try {
-        ;({ run, duel } = recordLeg({ duelId: leg.duel.id, leg: leg.leg, ms, quarantined, runInput }))
+        ;({ run, duel } = recordLeg({ duelId: leg.duel.id, leg: leg.leg, ms, runInput }))
       } catch (error) {
         if (!(error instanceof DuelError)) throw error
       }
