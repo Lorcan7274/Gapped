@@ -11,11 +11,11 @@ export const ATTRIBUTION = 'OpenFreeMap © OpenMapTiles Data from OpenStreetMap'
 const PALETTE = {
   light: {
     ground: '#efeee9', water: '#dcdfe0', park: '#e6e7df', road: '#ffffff', roadCase: '#dedcd4',
-    building: '#e9e8e3', route: '#101010', glow: '#ffffff', me: '#101010', ghost: '#a43f5e', halo: '#fafaf7',
+    building: '#e9e8e3', route: '#101010', glow: '#ffffff', me: '#101010', ghost: '#101010', ghostFill: 0.08, halo: '#fafaf7',
   },
   dark: {
     ground: '#0e0e0d', water: '#16191b', park: '#131412', road: '#2a2926', roadCase: '#1b1a18',
-    building: '#1f1e1c', route: '#f3f2ec', glow: '#cf5f82', me: '#f3f2ec', ghost: '#cf5f82', halo: '#121211',
+    building: '#1f1e1c', route: '#f3f2ec', glow: '#cf5f82', me: '#f3f2ec', ghost: '#cf5f82', ghostFill: 0.5, halo: '#121211',
   },
 }
 
@@ -52,8 +52,9 @@ export function mapStyle(theme) {
       {
         id: 'ghost', type: 'circle', source: 'marks', filter: ['==', ['get', 'kind'], 'ghost'],
         paint: {
-          'circle-radius': 10, 'circle-color': c.ghost, 'circle-opacity': 0.5,
-          'circle-stroke-color': c.ghost, 'circle-stroke-width': 1.5, 'circle-pitch-alignment': 'map',
+          // Light: a hollow ink ring beside your solid dot; dark: a garnet glow.
+          'circle-radius': 10, 'circle-color': c.ghost, 'circle-opacity': c.ghostFill,
+          'circle-stroke-color': c.ghost, 'circle-stroke-width': 2, 'circle-pitch-alignment': 'map',
         },
       },
       {
@@ -113,7 +114,7 @@ export function applyTheme(map, theme) {
     buildings: { 'fill-extrusion-color': c.building },
     'route-glow': { 'line-color': c.glow },
     route: { 'line-color': c.route },
-    ghost: { 'circle-color': c.ghost, 'circle-stroke-color': c.ghost },
+    ghost: { 'circle-color': c.ghost, 'circle-opacity': c.ghostFill, 'circle-stroke-color': c.ghost },
     me: { 'circle-color': c.me, 'circle-stroke-color': c.halo },
   }
   for (const [id, props] of Object.entries(paint)) {

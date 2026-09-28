@@ -822,3 +822,17 @@ html[data-theme='dark'] .rank-glass {
 @media (prefers-reduced-motion: reduce) {
   .switch, .switch__knob { transition: none; }
 }
+
+/* The ghost's key beside its name, matching its map marker: a hollow ink
+   ring in light, garnet in dark. */
+.ghost-swatch {
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid var(--color-ink);
+}
+html[data-theme='dark'] .ghost-swatch {
+  border-color: var(--color-garnet);
+  background: color-mix(in srgb, var(--color-garnet) 50%, transparent);
+}

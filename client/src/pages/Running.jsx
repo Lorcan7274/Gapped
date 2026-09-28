@@ -262,7 +262,7 @@ function Live({ state }) {
         <div className="flex min-h-[52px] items-center justify-between gap-4 border-b border-rule">
           {duel ? (
             <span className="flex min-w-0 items-center gap-2.5">
-              <span className="size-2.5 shrink-0 rounded-full bg-garnet/70" aria-hidden="true" />
+              <span className="ghost-swatch" aria-hidden="true" />
               <span className="truncate text-[15px] font-700">
                 {duel.leg === 1 ? 'Racing' : 'Replying to'} {duel.opponent?.displayName ?? 'your rival'}
               </span>
