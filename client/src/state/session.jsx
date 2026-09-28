@@ -99,6 +99,15 @@ export function SessionProvider({ children }) {
     }
   }, [updatePlayer, forget])
 
+  // Coming back to the app (a phone unlocked, a tab refocused) re-reads the
+  // player: hours may have passed, and a new week or a settled duel with them.
+  useEffect(() => {
+    if (status !== 'ready') return
+    const onShow = () => document.visibilityState === 'visible' && refreshPlayer()
+    document.addEventListener('visibilitychange', onShow)
+    return () => document.removeEventListener('visibilitychange', onShow)
+  }, [status, refreshPlayer])
+
   /* ----------------------------------------------------------------- socket */
 
   const onMessage = useCallback((frame) => {

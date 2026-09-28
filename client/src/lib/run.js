@@ -139,9 +139,11 @@ function begin(patch) {
     onError: (err) => set({ gps: err?.code === 1 ? 'blocked' : 'unavailable' }),
   })
   tracker.start()
-  // A leg's clock waits for the first fix; a solo run's starts at the tap.
+  // Clocked the way the server times the run: a leg from the first accepted
+  // fix, a solo run from the first fix of any kind — never from the tap,
+  // or a slow GPS lock would show minutes the server does not count.
   clock = setInterval(() => {
-    const from = state.mode === 'duel' ? firstFixAt : startedAt
+    const from = state.mode === 'duel' ? firstFixAt : track[0]?.t ?? null
     set({ elapsedMs: from == null ? 0 : Date.now() - from })
   }, 500)
 }

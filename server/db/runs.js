@@ -24,6 +24,14 @@ const selectEarned = db.prepare(`
          COALESCE(SUM(points), 0) AS points
   FROM runs WHERE player_id = ? AND day = ?
 `)
+const selectOverlap = db.prepare(
+  'SELECT id FROM runs WHERE player_id = ? AND started_at <= ? AND ended_at >= ? LIMIT 1'
+)
+const selectStreakDays = db.prepare(`
+  SELECT DISTINCT day FROM runs
+  WHERE player_id = @player AND status = 'ok' AND distance_m >= @minDistance AND elapsed_ms >= @minMs
+  ORDER BY day DESC LIMIT 1000
+`)
 const selectTrack = db.prepare('SELECT format, data FROM run_tracks WHERE run_id = ?')
 const selectWeekPoints = db.prepare(
   'SELECT COALESCE(SUM(points), 0) AS points FROM point_events WHERE player_id = ? AND week = ?'
@@ -58,6 +66,12 @@ const creditPlayer = db.prepare(`
 
 export const getRun = (id) => selectRun.get(id) ?? null
 export const findRunByStart = (playerId, startedAt) => selectByStart.get(playerId, startedAt) ?? null
+/** A stored run of this player's that shares any moment with [startedAt, endedAt]. */
+export const findOverlappingRun = (playerId, startedAt, endedAt) =>
+  selectOverlap.get(playerId, endedAt, startedAt) ?? null
+/** Days on which this player has a run that kept the streak going. */
+export const streakDays = (playerId, { minDistance, minMs }) =>
+  selectStreakDays.all({ player: playerId, minDistance, minMs }).map((r) => r.day)
 export const recentRuns = (playerId, limit = 30) => selectRecent.all(playerId, limit)
 
 /** Shards, Fuel and points a player's runs have already earned on a day, for the caps. */

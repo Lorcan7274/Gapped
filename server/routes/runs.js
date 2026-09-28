@@ -1,12 +1,14 @@
 import { parseTrack, summariseTrack, walkTrack, encodeTrack, decodeTrack, TrackError } from '../lib/track.js'
 import {
-  localDay, weekOf, intensity, nextStreak, soloRewards, countsForStreak,
+  localDay, weekOf, intensity, streakOf, soloRewards, countsForStreak,
 } from '../lib/economy.js'
 import { timeToCover } from '../lib/ghost.js'
 import { serializeRun } from '../lib/serialize.js'
-import { DUEL } from '../config/game.js'
+import { DUEL, STREAK } from '../config/game.js'
 import { getPlayer } from '../db/players.js'
-import { findRunByStart, earnedOn, recordRun, recentRuns } from '../db/runs.js'
+import {
+  findRunByStart, findOverlappingRun, streakDays, earnedOn, recordRun, recentRuns,
+} from '../db/runs.js'
 import { getDuel, recordLeg, settle, DuelError } from '../db/duels.js'
 import { describeSelf } from './me.js'
 import { describeDuel } from './duels.js'
@@ -77,6 +79,15 @@ export default async function runRoutes(app) {
       }
     }
 
+    // One run sent again with a fix or two trimmed off is not a new run: a
+    // player cannot be in two runs at once, so an overlap is refused.
+    if (findOverlappingRun(playerId, summary.startedAt, summary.endedAt)) {
+      return reply.code(409).send({
+        error: 'That run overlaps one already saved.',
+        code: 'run_overlap',
+      })
+    }
+
     const player = getPlayer(playerId)
     const leg = legFor(request.body?.duelId, playerId, summary.startedAt)
     const day = localDay(summary.startedAt)
@@ -84,7 +95,9 @@ export default async function runRoutes(app) {
     const quarantined = summary.flags.length > 0
     const effort = intensity(player.mmr, summary.distanceM, summary.elapsedMs)
     const before = { days: player.streak_days, lastDay: player.streak_last_day }
-    const streak = !quarantined && countsForStreak(minutes, summary.distanceM) ? nextStreak(before, day) : before
+    const streak = !quarantined && countsForStreak(minutes, summary.distanceM)
+      ? streakOf([day, ...streakDays(playerId, { minDistance: STREAK.minDistanceM, minMs: STREAK.minMinutes * 60_000 })])
+      : before
     const rewards = quarantined
       ? { shards: 0, fuel: 0, points: 0 }
       : soloRewards({ minutes, intensity: effort, streakDays: streak.days, today: earnedOn(playerId, day) })
@@ -138,6 +151,10 @@ export default async function runRoutes(app) {
       run: serializeRun(run),
       player: describeSelf(getPlayer(playerId)),
       duel: duel ? describeDuel(duel, playerId) : null,
+      // Why a run paid less than it might have: today's caps were reached.
+      capped: Boolean(rewards.capped),
+      // A run from before this week's Monday (uploaded late) paid last week's table.
+      lastWeek: run.week < weekOf(Date.now()),
       // Asked to be a leg but could not be: the run counted as solo.
       ...(request.body?.duelId && !duel ? { duelClosed: true } : {}),
     })

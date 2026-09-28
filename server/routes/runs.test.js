@@ -100,7 +100,7 @@ test('an implausible run is quarantined: stored, unranked, paying nothing, takin
 test('daily caps hold across runs', async () => {
   for (let i = 0; i < 6; i++) {
     const res = await call('POST', '/api/runs', {
-      track: track({ seconds: 3600, endAgoMs: 12_000_000 + i * 3_700_000 }),
+      track: track({ seconds: 3600, endAgoMs: 14_000_000 + i * 3_700_000 }),
     })
     assert.equal(res.statusCode, 201)
   }
@@ -124,4 +124,29 @@ test('the stored track can be read back for replay', () => {
   const row = db.prepare('SELECT samples, data FROM run_tracks LIMIT 1').get()
   assert.ok(row.samples > 1000)
   assert.equal(JSON.parse(row.data).v, 1)
+})
+
+test('the same run sent again with its first fixes trimmed is refused, not paid twice', async () => {
+  const run = track({ seconds: 1200, endAgoMs: 50 * 3_600_000 })
+  assert.equal((await call('POST', '/api/runs', { track: run })).statusCode, 201)
+  const trimmed = await call('POST', '/api/runs', { track: run.slice(3) })
+  assert.equal(trimmed.statusCode, 409)
+  assert.equal(trimmed.json().code, 'run_overlap')
+})
+
+test('a run uploaded late still fills its day in the streak', async () => {
+  const phone = '+353870000010'
+  const { devCode } = (await app.inject({ method: 'POST', url: '/api/auth/request-code', payload: { phone } })).json()
+  const other = (await app.inject({
+    method: 'POST', url: '/api/auth/verify', payload: { phone, code: devCode, displayName: 'Fionn' },
+  })).json().token
+  const post = (payload) =>
+    app.inject({ method: 'POST', url: '/api/runs', payload, headers: { authorization: `Bearer ${other}` } })
+
+  await post({ track: track({ endAgoMs: 48 * 3_600_000 }) }) // two days ago
+  const today = (await post({ track: track() })).json()
+  assert.equal(today.player.streak, 1, 'yesterday is missing so far')
+  const late = (await post({ track: track({ endAgoMs: 24 * 3_600_000 }) })).json() // yesterday, sent last
+  assert.equal(late.player.streak, 3)
+  assert.equal(late.lastWeek, late.run.week < today.run.week)
 })

@@ -63,6 +63,20 @@ export function nextStreak({ days = 0, lastDay = null } = {}, day) {
   return { days: 1, lastDay: day }
 }
 
+/**
+ * The streak rebuilt from every day with a qualifying run (any order,
+ * repeats fine): the run of consecutive days ending at the latest. Built from
+ * the record rather than stepped run by run, so a run uploaded late — after a
+ * newer one — still fills its day.
+ */
+export function streakOf(days) {
+  const sorted = [...new Set(days)].sort().reverse()
+  if (sorted.length === 0) return { days: 0, lastDay: null }
+  let n = 1
+  while (n < sorted.length && addDays(sorted[n - 1], -1) === sorted[n]) n += 1
+  return { days: n, lastDay: sorted[0] }
+}
+
 /** A streak shown on a given day: it survives until a whole day is missed. */
 export function currentStreak({ days = 0, lastDay = null } = {}, today) {
   if (!lastDay) return 0

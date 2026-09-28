@@ -81,6 +81,11 @@ function RunResult({ result }) {
   const quarantined = saved.status === 'quarantined'
   const km = (saved.distanceM / 1000).toFixed(2)
   const streak = result.player?.streak ?? 0
+  const shardsHint =
+    saved.shards > 0 ? null
+    : result.capped ? 'You have grown all the crystal you can today'
+    : saved.distanceM < 400 ? 'Too short a distance to grow the crystal'
+    : 'Runs under 10 minutes do not grow the crystal'
 
   return (
     <Frame>
@@ -96,9 +101,9 @@ function RunResult({ result }) {
           </p>
         ) : (
           <div className="mt-8 border-t border-rule">
-            <Payout label="Shards" value={saved.shards} hint={saved.shards === 0 ? 'Runs under 10 minutes do not grow the crystal' : null} />
+            <Payout label="Shards" value={saved.shards} hint={shardsHint} />
             <Payout label="Fuel" value={saved.fuel} />
-            <Payout label="Points this week" value={saved.points} />
+            <Payout label={result.lastWeek ? 'Points last week' : 'Points this week'} value={saved.points} />
             {streak > 0 && <Payout label="Streak" value={`${streak} day${streak === 1 ? '' : 's'}`} plain />}
           </div>
         )}
