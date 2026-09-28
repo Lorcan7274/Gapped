@@ -41,7 +41,8 @@ after(async () => {
   fs.rmSync(tmp, { recursive: true, force: true })
 })
 
-const post = (url, payload, headers = {}) => app.inject({ method: 'POST', url, payload, headers })
+const post = (url, payload, headers = {}, remoteAddress = '127.0.0.1') =>
+  app.inject({ method: 'POST', url, payload, headers, remoteAddress })
 
 async function codeFor(phone) {
   const res = await post('/api/auth/request-code', { phone })
@@ -108,4 +109,31 @@ test('bearer parsing is strict', () => {
   assert.equal(auth.bearerToken(req('Basic abc')), null)
   assert.equal(auth.bearerToken(req('Bearer a b')), null)
   assert.equal(auth.bearerToken({ headers: {} }), null)
+})
+
+test('an hourly purge does not reset a number’s code quota', async () => {
+  const phone = '+14155550177'
+  const issued = []
+  for (let i = 0; i < 5; i++) {
+    const res = await post('/api/auth/request-code', { phone }, {}, `10.0.1.${i}`)
+    assert.equal(res.statusCode, 200, res.body)
+    issued.push(res.json())
+    // Step past the resend cooldown without waiting.
+    db.prepare('UPDATE auth_codes SET created_at = created_at - 60000, expires_at = 0 WHERE phone = ?').run(phone)
+  }
+  auth.purgeExpired()
+  const sixth = await post('/api/auth/request-code', { phone }, {}, '10.0.1.9')
+  assert.equal(sixth.statusCode, 429)
+  assert.ok(sixth.json().retryInSeconds < 3600)
+})
+
+test('one caller cannot work through many numbers', async () => {
+  let last
+  for (let i = 0; i < 11; i++) {
+    last = await post('/api/auth/request-code', { phone: `+1415555${String(200 + i).padStart(4, '0')}` }, {}, '10.0.2.1')
+  }
+  assert.equal(last.statusCode, 429)
+  assert.equal(last.json().code, 'rate_limited')
+  // Someone else is not held up by it.
+  assert.equal((await post('/api/auth/request-code', { phone: '+14155550299' }, {}, '10.0.2.2')).statusCode, 200)
 })
