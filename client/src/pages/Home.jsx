@@ -24,7 +24,7 @@ const readPrivate = () => {
  * mode, and a private run pays exactly the same.
  */
 export default function Home() {
-  const { player } = useSession()
+  const { player, refreshPlayer } = useSession()
   const [ladderOpen, setLadderOpen] = useState(false)
   const [keepPrivate, setKeepPrivate] = useState(readPrivate)
   const [duelsOpen, setDuelsOpen] = useState(false)
@@ -34,12 +34,16 @@ export default function Home() {
   // now and then while it stays open.
   useEffect(() => {
     if (!player?.id || duelsOpen) return
-    const look = () =>
+    // The player too: a duel settling, or Monday arriving, changes the week's
+    // points, Fuel and streak without this phone running anything.
+    const look = () => {
       api('/api/duels').then((d) => setReplies(d.duels.filter((x) => x.yourTurn))).catch(() => {})
+      refreshPlayer()
+    }
     look()
     const timer = setInterval(look, 60_000)
     return () => clearInterval(timer)
-  }, [player?.id, duelsOpen])
+  }, [player?.id, duelsOpen, refreshPlayer])
 
   if (!player) return null
   const tier = player.tier ?? { key: 'bronze', label: 'Bronze' }

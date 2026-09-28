@@ -43,6 +43,7 @@ export function serializeRun(row) {
     private: Boolean(row.private),
     startedAt: row.started_at,
     endedAt: row.ended_at,
+    week: row.week,
     distanceM: Math.round(row.distance_m),
     elapsedMs: row.elapsed_ms,
     // 'ok', or 'quarantined': flagged, settled unranked pending review.

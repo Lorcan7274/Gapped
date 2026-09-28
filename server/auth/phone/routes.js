@@ -2,12 +2,44 @@ import { db } from '../../db/index.js'
 import { AUTH_CODE_ECHO } from '../../config/env.js'
 import { normalisePhone } from './numbers.js'
 import { sendCode } from './sms.js'
-import { issueCode, checkCode, consumeCodes } from './codes.js'
+import { issueCode, checkCode, consumeCodes, discardCode } from './codes.js'
 import { createSession } from '../sessions.js'
 import { playerIdFor, linkIdentity } from '../identities.js'
 
 const PROVIDER = 'phone'
 const isConstraint = (error) => String(error?.code || '').startsWith('SQLITE_CONSTRAINT')
+
+// Per-number limits (codes.js) stop one number being hammered; these stop
+// one caller working through many numbers at once — texting strangers, or
+// guessing codes across every account in parallel.
+const HOUR_MS = 3_600_000
+const MAX_CODE_REQUESTS_PER_IP = 10
+const MAX_VERIFIES_PER_IP = 30
+
+/** A sliding one-hour count per key, in memory: one process serves everything. */
+function hourlyLimit(max) {
+  const hits = new Map()
+  return (key, ts = Date.now()) => {
+    const recent = (hits.get(key) ?? []).filter((t) => ts - t < HOUR_MS)
+    if (recent.length >= max) {
+      hits.set(key, recent)
+      return Math.ceil((recent[0] + HOUR_MS - ts) / 1000)
+    }
+    recent.push(ts)
+    hits.set(key, recent)
+    // Forget idle callers now and then so the map cannot grow without end.
+    if (hits.size > 10_000) {
+      for (const [k, list] of hits) if (!list.some((t) => ts - t < HOUR_MS)) hits.delete(k)
+    }
+    return 0
+  }
+}
+const slowDown = (reply, retryInSeconds) =>
+  reply.code(429).send({
+    error: 'Too many tries from here. Wait a while and try again.',
+    code: 'rate_limited',
+    retryInSeconds,
+  })
 
 /**
  * Sign-in by phone: a texted six-digit code proves the number, and the number
@@ -16,6 +48,8 @@ const isConstraint = (error) => String(error?.code || '').startsWith('SQLITE_CON
  */
 export default function phoneRoutes({ createPlayer, describePlayer, onPlayerCreated }) {
   return async function routes(app) {
+    const codeRequests = hourlyLimit(MAX_CODE_REQUESTS_PER_IP)
+    const verifies = hourlyLimit(MAX_VERIFIES_PER_IP)
     /**
      * Step one: ask for a code. The same endpoint serves signing up and
      * signing back in — it neither knows nor says whether the number has an
@@ -29,12 +63,15 @@ export default function phoneRoutes({ createPlayer, describePlayer, onPlayerCrea
         })
       }
 
+      const wait = codeRequests(request.ip)
+      if (wait) return slowDown(reply, wait)
+
       const issued = issueCode(phone)
       if (!issued.ok) {
         return reply.code(429).send({
           error: issued.reason === 'cooldown'
             ? `Give it ${issued.retryInSeconds} seconds before asking for another code.`
-            : 'Too many codes for this number. Try again in an hour.',
+            : `Too many codes for this number. Try again in ${Math.ceil(issued.retryInSeconds / 60)} minutes.`,
           retryInSeconds: issued.retryInSeconds,
         })
       }
@@ -43,6 +80,8 @@ export default function phoneRoutes({ createPlayer, describePlayer, onPlayerCrea
         await sendCode(phone, issued.code, request.log)
       } catch (error) {
         request.log.error({ err: error }, 'verification SMS failed to send')
+        // It never arrived, so it must not hold the number in cooldown.
+        discardCode(issued.id)
         return reply.code(502).send({
           error: 'We could not text that number right now. Wait a moment and try again.',
         })
@@ -70,6 +109,8 @@ export default function phoneRoutes({ createPlayer, describePlayer, onPlayerCrea
       if (!/^\d{6}$/.test(code)) {
         return reply.code(400).send({ error: 'Enter the six-digit code.' })
       }
+      const wait = verifies(request.ip)
+      if (wait) return slowDown(reply, wait)
 
       const verdict = checkCode(phone, code)
       if (verdict.status === 'too_many') {

@@ -26,13 +26,16 @@ const livePending = db.prepare(`
   ORDER BY created_at DESC
 `)
 const countRecent = db.prepare(
-  'SELECT COUNT(*) AS n FROM auth_codes WHERE phone = ? AND created_at >= ?'
+  'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM auth_codes WHERE phone = ? AND created_at >= ?'
 )
 const bumpAttempts = db.prepare('UPDATE auth_codes SET attempts = attempts + 1 WHERE id = ?')
 const markConsumed = db.prepare(
   'UPDATE auth_codes SET consumed_at = ? WHERE phone = ? AND consumed_at IS NULL'
 )
-const purge = db.prepare('DELETE FROM auth_codes WHERE expires_at < ?')
+// Expired codes stay until they leave the quota window: they are what the
+// per-number quota counts, so purging them sooner would reset it.
+const purge = db.prepare('DELETE FROM auth_codes WHERE expires_at < ? AND created_at < ?')
+const remove = db.prepare('DELETE FROM auth_codes WHERE id = ?')
 
 /**
  * Mint a code for a number. Returns the plain code exactly once, here — the
@@ -49,14 +52,23 @@ export function issueCode(phone) {
       retryInSeconds: Math.ceil((RESEND_COOLDOWN_MS - (ts - last.created_at)) / 1000),
     }
   }
-  if (countRecent.get(phone, ts - QUOTA_WINDOW_MS).n >= MAX_CODES_PER_WINDOW) {
-    return { ok: false, reason: 'quota', retryInSeconds: Math.ceil(QUOTA_WINDOW_MS / 1000) }
+  const recent = countRecent.get(phone, ts - QUOTA_WINDOW_MS)
+  if (recent.n >= MAX_CODES_PER_WINDOW) {
+    return {
+      ok: false,
+      reason: 'quota',
+      retryInSeconds: Math.max(1, Math.ceil((recent.oldest + QUOTA_WINDOW_MS - ts) / 1000)),
+    }
   }
 
+  const id = newId()
   const code = newAuthCode()
-  insert.run(newId(), phone, hashCode(phone, code), ts, ts + AUTH_CODE_TTL_MS)
-  return { ok: true, code, ttlMs: AUTH_CODE_TTL_MS }
+  insert.run(id, phone, hashCode(phone, code), ts, ts + AUTH_CODE_TTL_MS)
+  return { ok: true, id, code, ttlMs: AUTH_CODE_TTL_MS }
 }
+
+/** Take back a code that never reached the phone, so it costs no cooldown or quota. */
+export const discardCode = (id) => remove.run(id)
 
 /**
  * Check a guess against every live code for a number — unconsumed and not
@@ -89,4 +101,4 @@ export function checkCode(phone, code) {
  */
 export const consumeCodes = (phone) => markConsumed.run(now(), phone).changes > 0
 
-export const purgeExpiredAuthCodes = () => purge.run(now())
+export const purgeExpiredAuthCodes = () => purge.run(now(), now() - QUOTA_WINDOW_MS)

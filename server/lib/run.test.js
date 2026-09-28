@@ -4,7 +4,7 @@ import { TRACK, SHARDS, FUEL, SOLO_POINTS, STREAK, RATING } from '../config/game
 import { parseTrack, summariseTrack, encodeTrack, decodeTrack, TrackError } from './track.js'
 import {
   localDay, addDays, weekOf, intensity, nextStreak, currentStreak, streakMultiplier,
-  soloRewards, countsForStreak,
+  soloRewards, countsForStreak, streakOf,
 } from './economy.js'
 import { expectedTime } from './rating.js'
 import { tierOf, ladderLabel, ladderPosition } from './ladder.js'
@@ -127,7 +127,14 @@ describe('streaks', () => {
     assert.deepEqual(nextStreak(s, '2026-09-19'), s)
   })
 
-  test('a streak shows until a whole day is missed', () => {
+  test('a streak rebuilt from the record does not care what order runs arrived in', () => {
+    assert.deepEqual(streakOf([]), { days: 0, lastDay: null })
+    assert.deepEqual(streakOf(['2026-09-26', '2026-09-28', '2026-09-27', '2026-09-27']), { days: 3, lastDay: '2026-09-28' })
+    assert.deepEqual(streakOf(['2026-09-24', '2026-09-28', '2026-09-27']), { days: 2, lastDay: '2026-09-28' })
+    assert.deepEqual(streakOf(['2026-02-28', '2026-03-01']), { days: 2, lastDay: '2026-03-01' })
+  })
+
+    test('a streak shows until a whole day is missed', () => {
     const s = { days: 4, lastDay: '2026-09-26' }
     assert.equal(currentStreak(s, '2026-09-26'), 4)
     assert.equal(currentStreak(s, '2026-09-27'), 4)
