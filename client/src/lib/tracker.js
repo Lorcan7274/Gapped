@@ -91,8 +91,16 @@ export function createTracker({ onUpdate, onError, onFix } = {}) {
   }
 
   function handle(position) {
-    const { latitude: lat, longitude: lng, accuracy, altitude } = position.coords
-    const at = position.timestamp
+    // Rounded exactly as the server stores a track (encodeTrack in
+    // server/lib/track.js), which is what it measures a run from. Measured
+    // raw, noisy GPS drifts apart by tens of metres — enough for a leg this
+    // phone saw finish to settle as a quit.
+    const c = position.coords
+    const lat = Math.round(c.latitude * 1e6) / 1e6
+    const lng = Math.round(c.longitude * 1e6) / 1e6
+    const accuracy = c.accuracy == null ? null : Math.round(c.accuracy * 10) / 10
+    const altitude = c.altitude == null ? null : Math.round(c.altitude * 10) / 10
+    const at = Math.round(position.timestamp)
     lastAccuracy = accuracy
     // Every raw fix goes to the recording before any filtering: the server
     // recomputes distance from these with the same filter, and never trusts
