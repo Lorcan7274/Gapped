@@ -173,3 +173,16 @@ test('a run page shows its route to the runner and to nobody else', async () => 
   assert.equal(peek.json().code, 'run_missing')
   assert.equal((await call('GET', '/api/me/runs/nope')).statusCode, 404)
 })
+
+test('the weekly chart sums your last twelve weeks, empty weeks included', async () => {
+  const { weeks } = (await call('GET', '/api/me/weeks')).json()
+  assert.equal(weeks.length, 12)
+  const { runs } = (await call('GET', '/api/me/runs')).json()
+  const ok = runs.filter((r) => r.status === 'ok')
+  const thisWeek = weeks.at(-1)
+  const expected = ok.filter((r) => r.week === thisWeek.week)
+  assert.equal(thisWeek.runs, expected.length)
+  assert.ok(Math.abs(thisWeek.distanceM - expected.reduce((sum, r) => sum + r.distanceM, 0)) <= expected.length)
+  assert.deepEqual(weeks[0], { week: weeks[0].week, distanceM: 0, elapsedMs: 0, runs: 0 })
+  for (let i = 1; i < 12; i++) assert.ok(weeks[i].week > weeks[i - 1].week)
+})

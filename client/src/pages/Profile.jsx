@@ -5,6 +5,7 @@ import { clock, metres, pace, daysAgo } from '../lib/format.js'
 import { useRun } from '../lib/run.js'
 import { Shard } from '../components/Crystal.jsx'
 import RouteMap from '../components/RouteMap.jsx'
+import WeeklyChart from '../components/WeeklyChart.jsx'
 import { Button, Label, Spinner } from '../components/ui.jsx'
 
 const field =
@@ -19,6 +20,7 @@ export default function Profile({ settingsOpen = false }) {
   const { player, setNotice } = useSession()
   const [runs, setRuns] = useState(null)
   const [openRun, setOpenRun] = useState(null)
+  const [weeks, setWeeks] = useState(null)
   // A run just saved should show up without a reload.
   const lastRunId = useRun().result?.run?.id
 
@@ -27,6 +29,9 @@ export default function Profile({ settingsOpen = false }) {
     api('/api/me/runs')
       .then((d) => setRuns(d.runs))
       .catch(() => setRuns([]))
+    api('/api/me/weeks')
+      .then((d) => setWeeks(d.weeks))
+      .catch(() => setWeeks(null))
   }, [player?.id, lastRunId])
 
   if (!player) return null
@@ -49,6 +54,12 @@ export default function Profile({ settingsOpen = false }) {
         <Stat label="Runs" value={player.runs ?? 0} top />
         <Stat label="Streak" value={player.streak ? `${player.streak}d` : '—'} divided top />
       </div>
+
+      {weeks && (
+        <div className="mt-7 border-b border-rule pb-6">
+          <WeeklyChart weeks={weeks} />
+        </div>
+      )}
 
       <div className="mt-7">
         <Label>Recent runs</Label>

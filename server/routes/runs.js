@@ -1,6 +1,6 @@
 import { parseTrack, summariseTrack, walkTrack, encodeTrack, decodeTrack, TrackError } from '../lib/track.js'
 import {
-  localDay, weekOf, intensity, streakOf, soloRewards, countsForStreak,
+  localDay, weekOf, addDays, intensity, streakOf, soloRewards, countsForStreak,
 } from '../lib/economy.js'
 import { timeToCover } from '../lib/ghost.js'
 import { serializeRun } from '../lib/serialize.js'
@@ -8,7 +8,7 @@ import { DUEL, STREAK } from '../config/game.js'
 import { getPlayer } from '../db/players.js'
 import {
   findRunByStart, findOverlappingRun, streakDays, earnedOn, recordRun, recentRuns,
-  getRun, getTrackData,
+  getRun, getTrackData, weeklyTotals,
 } from '../db/runs.js'
 import { getDuel, recordLeg, settle, DuelError } from '../db/duels.js'
 import { describeSelf } from './me.js'
@@ -164,6 +164,28 @@ export default async function runRoutes(app) {
   app.get('/api/me/runs', { preHandler: app.requirePlayer }, async (request) => ({
     runs: recentRuns(request.player.id, 30).map(serializeRun),
   }))
+
+  /**
+   * Your last twelve weeks, oldest first, empty weeks included, for the
+   * You tab's chart. Flagged runs are left out, as they are from your
+   * lifetime distance.
+   */
+  app.get('/api/me/weeks', { preHandler: app.requirePlayer }, async (request) => {
+    const thisWeek = weekOf(Date.now())
+    const weeks = Array.from({ length: 12 }, (_, i) => addDays(thisWeek, (i - 11) * 7))
+    const totals = new Map(weeklyTotals(request.player.id, weeks[0]).map((row) => [row.week, row]))
+    return {
+      weeks: weeks.map((week) => {
+        const row = totals.get(week)
+        return {
+          week,
+          distanceM: Math.round(row?.distance_m ?? 0),
+          elapsedMs: row?.elapsed_ms ?? 0,
+          runs: row?.runs ?? 0,
+        }
+      }),
+    }
+  })
 
   /**
    * One of your own runs with the route it drew, for the run's page. The
