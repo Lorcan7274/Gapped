@@ -8,6 +8,7 @@ import { DUEL, STREAK } from '../config/game.js'
 import { getPlayer } from '../db/players.js'
 import {
   findRunByStart, findOverlappingRun, streakDays, earnedOn, recordRun, recentRuns,
+  getRun, getTrackData,
 } from '../db/runs.js'
 import { getDuel, recordLeg, settle, DuelError } from '../db/duels.js'
 import { describeSelf } from './me.js'
@@ -163,4 +164,16 @@ export default async function runRoutes(app) {
   app.get('/api/me/runs', { preHandler: app.requirePlayer }, async (request) => ({
     runs: recentRuns(request.player.id, 30).map(serializeRun),
   }))
+
+  /**
+   * One of your own runs with the route it drew, for the run's page. The
+   * coordinates go to the runner alone: a run raced as a ghost only ever
+   * leaves as a distance profile.
+   */
+  app.get('/api/me/runs/:id', { preHandler: app.requirePlayer }, async (request, reply) => {
+    const run = getRun(request.params.id)
+    const data = run?.player_id === request.player.id ? getTrackData(run.id) : null
+    if (!data) return reply.code(404).send({ error: 'No such run.', code: 'run_missing' })
+    return { run: serializeRun(run), route: walkTrack(decodeTrack(data)).route }
+  })
 }

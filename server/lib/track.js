@@ -67,7 +67,8 @@ export function parseTrack(raw, { now }, cfg = TRACK) {
  * last accepted one is dropped, and movement under the jitter floor holds
  * the anchor. Returns the totals and the distance profile — cumulative
  * metres at each accepted fix, timed from the first accepted fix. The
- * profile is what a ghost is: how far the runner had got, and when.
+ * profile is what a ghost is: how far the runner had got, and when. The
+ * route is the anchors as [lng, lat]: the line the runner drew, jitter held.
  *
  * Fixes before the first good one are the GPS warming up — a duel leg even
  * asks the runner to wait for them — so they are counted apart from the
@@ -82,6 +83,7 @@ export function walkTrack(points, cfg = TRACK) {
   let rejected = 0
   let warmup = 0
   const profile = []
+  const route = []
   for (const p of points) {
     if (p.acc != null && p.acc > cfg.maxAccuracyM) {
       if (anchor) rejected += 1
@@ -98,16 +100,18 @@ export function walkTrack(points, cfg = TRACK) {
       if (step >= cfg.minStepM) {
         distanceM += step
         anchor = p
+        route.push([p.lng, p.lat])
       }
     } else {
       anchor = p
       firstAccepted = p
+      route.push([p.lng, p.lat])
     }
     lastAccepted = p
     accepted += 1
     profile.push([p.t - firstAccepted.t, distanceM])
   }
-  return { distanceM, accepted, rejected, warmup, firstAccepted, lastAccepted, profile }
+  return { distanceM, accepted, rejected, warmup, firstAccepted, lastAccepted, profile, route }
 }
 
 /**
