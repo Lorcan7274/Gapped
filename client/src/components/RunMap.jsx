@@ -6,8 +6,8 @@ import { heading, ghostPoint } from '../lib/routeGeo.js'
 
 /* global __MAPLIBRE_BASE__ */
 let loading = null
-/** MapLibre, loaded once, the first time a run starts (see vite.config.js). */
-function loadMapLibre() {
+/** MapLibre, loaded once, the first time a map is shown (see vite.config.js). */
+export function loadMapLibre() {
   if (!loading) {
     const css = document.createElement('link')
     css.rel = 'stylesheet'

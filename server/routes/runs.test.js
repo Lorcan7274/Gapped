@@ -150,3 +150,26 @@ test('a run uploaded late still fills its day in the streak', async () => {
   assert.equal(late.player.streak, 3)
   assert.equal(late.lastWeek, late.run.week < today.run.week)
 })
+
+test('a run page shows its route to the runner and to nobody else', async () => {
+  const { runs } = (await call('GET', '/api/me/runs')).json()
+  const mine = runs.find((r) => r.startedAt === firstRun[0].t)
+  const res = await call('GET', `/api/me/runs/${mine.id}`)
+  assert.equal(res.statusCode, 200, res.body)
+  const { run, route } = res.json()
+  assert.equal(run.id, mine.id)
+  assert.deepEqual(route[0], [firstRun[0].lng, firstRun[0].lat])
+  assert.ok(Math.abs(route.at(-1)[0] - firstRun.at(-1).lng) < 1e-4)
+
+  const phone = '+353870000011'
+  const { devCode } = (await app.inject({ method: 'POST', url: '/api/auth/request-code', payload: { phone } })).json()
+  const stranger = (await app.inject({
+    method: 'POST', url: '/api/auth/verify', payload: { phone, code: devCode, displayName: 'Niamh' },
+  })).json().token
+  const peek = await app.inject({
+    method: 'GET', url: `/api/me/runs/${mine.id}`, headers: { authorization: `Bearer ${stranger}` },
+  })
+  assert.equal(peek.statusCode, 404)
+  assert.equal(peek.json().code, 'run_missing')
+  assert.equal((await call('GET', '/api/me/runs/nope')).statusCode, 404)
+})
