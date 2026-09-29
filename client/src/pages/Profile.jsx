@@ -6,6 +6,7 @@ import { useRun } from '../lib/run.js'
 import { Shard } from '../components/Crystal.jsx'
 import RouteMap from '../components/RouteMap.jsx'
 import WeeklyChart from '../components/WeeklyChart.jsx'
+import ThemeToggle from '../components/ThemeToggle.jsx'
 import { Button, Label, Spinner } from '../components/ui.jsx'
 
 const field =
@@ -170,7 +171,7 @@ function RunDetail({ run, onBack }) {
 
 /**
  * The gear on the You tab opens this in place of the profile: the name you
- * race under, the number you are verified as, and the way out.
+ * race under, light or dark, the number you are verified as, and the way out.
  */
 function Settings({ player, setNotice }) {
   const { leave, rename } = useSession()
@@ -239,6 +240,10 @@ function Settings({ player, setNotice }) {
             <span className="truncate text-[15px] text-slate">{player.displayName}</span>
           </button>
         )}
+        <div className="flex min-h-[56px] items-center justify-between gap-4 border-b border-rule">
+          <span className="text-[15px]">Dark mode</span>
+          <ThemeToggle />
+        </div>
       </div>
 
       <div className="mt-10 border-t border-rule">
