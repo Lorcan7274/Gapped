@@ -1,24 +1,61 @@
 import { useEffect, useRef } from 'react'
 import { DuelRig } from '../lib/duelRig.js'
+import { holdPage } from '../lib/pageCover.js'
 
 /**
- * What the Duel button opens: the screen floods black from below, then
- * splits into two liquid halves. The black top half is a random lobby for
- * the selected format; the white bottom half hands off to the Lobby to pick
- * a rival. A red glow bleeds up from the bottom edge — drag it up (or tap
- * it) to wash the whole thing away. All motion lives in DuelRig.
+ * What the Run tab's start button opens: the screen floods black from below,
+ * then splits into two liquid halves — the black top and the white bottom,
+ * each a choice the caller names ({ label, title, caption, onPick }). A red
+ * glow bleeds up from the bottom edge — drag it up (or tap it) to wash the
+ * whole thing away. All motion lives in DuelRig.
  *
+ * Either pick flings the sheet off the top. The top's choice acts at once,
+ * so what it opens is revealed underneath as the sheet flies; the bottom's
+ * acts once the sheet is gone, so nothing heavy (the running screen and its
+ * map) mounts mid-flight and costs the animation a frame.
  * `open` is owned by the parent; the rig reports back through `onClose`
  * whenever the sheet has left the screen.
  */
-export default function DuelSheet({ open, caption, onRandom, onFriend, onClose }) {
+export default function DuelSheet({ open, top, bottom, onClose }) {
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
+  const afterRef = useRef(null) // a pick waiting for the sheet to leave
+  // What the sheet covers stops painting (lib/pageCover.js). A top pick
+  // keeps the hold until the sheet is gone: the screen it opened is taking
+  // over the cover underneath, and the background must not come back between.
+  const holdRef = useRef(null)
+  const keepHoldRef = useRef(false)
+  const cover = (state) => {
+    if (state) {
+      if (holdRef.current) holdRef.current(state === 'covered' ? 'full' : 'dim')
+      else holdRef.current = holdPage(state === 'covered' ? 'full' : 'dim')
+    } else if (!keepHoldRef.current) {
+      holdRef.current?.()
+      holdRef.current = null
+    }
+  }
   const rigRef = useRef(null)
-  if (!rigRef.current) rigRef.current = new DuelRig(() => onCloseRef.current())
+  if (!rigRef.current) {
+    rigRef.current = new DuelRig(() => {
+      onCloseRef.current()
+      keepHoldRef.current = false
+      cover(false)
+      const after = afterRef.current
+      afterRef.current = null
+      after?.()
+    }, (state) => cover(state))
+  }
   const rig = rigRef.current
 
-  useEffect(() => () => rig.destroy(), [rig])
+  useEffect(
+    () => () => {
+      rig.destroy()
+      keepHoldRef.current = false
+      holdRef.current?.()
+      holdRef.current = null
+    },
+    [rig]
+  )
 
   useEffect(() => {
     if (open && !rig.active) rig.open()
@@ -40,33 +77,35 @@ export default function DuelSheet({ open, caption, onRandom, onFriend, onClose }
         }`}
         role="dialog"
         aria-modal="true"
-        aria-label="Start a duel"
+        aria-label="Solo or duel"
         aria-hidden={!open}
       >
         <div ref={rig.ref('sheet')} className="duel-sheet__body">
           <button
             ref={rig.ref('bottom')}
             onClick={() => {
-              rig.dismiss()
-              onFriend()
+              afterRef.current = bottom.onPick
+              rig.wipe()
             }}
             className="duel-sheet__friend"
           >
-            <span className="label text-muted">Or pick your rival</span>
-            <span className="duel-sheet__title">Challenge a friend</span>
+            <span className="label text-muted">{bottom.label}</span>
+            <span className="duel-sheet__title">{bottom.title}</span>
+            {bottom.caption && <span className="text-[13px] text-muted">{bottom.caption}</span>}
           </button>
 
           <button
             ref={rig.ref('black')}
             onClick={() => {
-              onRandom()
+              keepHoldRef.current = true
+              top.onPick()
               rig.wipe()
             }}
             className="duel-sheet__random"
           >
-            <span className="label opacity-55">Find an opponent</span>
-            <span className="duel-sheet__title">Random lobby</span>
-            <span className="text-[13px] opacity-55">{caption}</span>
+            <span className="label opacity-55">{top.label}</span>
+            <span className="duel-sheet__title">{top.title}</span>
+            {top.caption && <span className="text-[13px] opacity-55">{top.caption}</span>}
             <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="duel-sheet__wave" aria-hidden="true">
               <path ref={rig.ref('wave')} d="M0,0 H100 V2 C 83,2 67,2 50,2 C 33,2 17,2 0,2 Z" />
             </svg>

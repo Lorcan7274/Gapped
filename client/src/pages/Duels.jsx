@@ -4,6 +4,7 @@ import { run } from '../lib/run.js'
 import { useSession } from '../state/session.jsx'
 import { clock, metres, daysAgo, signedClock } from '../lib/format.js'
 import { Button, Label, Spinner } from '../components/ui.jsx'
+import { holdPage } from '../lib/pageCover.js'
 
 /**
  * Duels, one screen: challenges waiting on your reply, legs you started that
@@ -25,6 +26,8 @@ export default function Duels({ onClose }) {
     api('/api/feed').then(setFeed).catch(() => setFeed({ runs: [] }))
   }, [])
   useEffect(load, [load])
+  // This screen covers the Run tab completely: its background can rest.
+  useEffect(() => holdPage('full'), [])
 
   async function go() {
     setBusy(true)

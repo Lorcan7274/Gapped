@@ -5,6 +5,7 @@ import { api } from '../lib/api.js'
 import Duels from './Duels.jsx'
 import Crystal from '../components/Crystal.jsx'
 import TierLadder from '../components/TierLadder.jsx'
+import DuelSheet from '../components/DuelSheet.jsx'
 import { Button, Label } from '../components/ui.jsx'
 
 const PRIVATE_KEY = 'gapped.privateRuns'
@@ -24,10 +25,11 @@ const readPrivate = () => {
  * mode, and a private run pays exactly the same.
  */
 export default function Home() {
-  const { player, refreshPlayer } = useSession()
+  const { player, meta, refreshPlayer } = useSession()
   const [ladderOpen, setLadderOpen] = useState(false)
   const [keepPrivate, setKeepPrivate] = useState(readPrivate)
   const [duelsOpen, setDuelsOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
   const [replies, setReplies] = useState([])
 
   // Challenges waiting on you. No push yet, so look when the tab shows, and
@@ -47,6 +49,7 @@ export default function Home() {
 
   if (!player) return null
   const tier = player.tier ?? { key: 'bronze', label: 'Bronze' }
+  const fuelCost = meta?.duel?.fuelCost
 
   function togglePrivate() {
     const next = !keepPrivate
@@ -111,15 +114,31 @@ export default function Home() {
             <span className="switch__knob" />
           </span>
         </button>
-        <Button onClick={() => run.start({ private: keepPrivate })}>Start run</Button>
-        <Button variant="outline" onClick={() => setDuelsOpen(true)}>Duel</Button>
+        <Button onClick={() => setSheetOpen(true)}>Start run</Button>
         <p className="text-center text-[13px] text-muted">
-          A solo run always pays and never costs. A duel races someone’s ghost for points.
+          Solo always pays and never costs. A duel races someone’s ghost for points.
         </p>
       </div>
 
       {ladderOpen && <TierLadder onClose={() => setLadderOpen(false)} />}
       {duelsOpen && <Duels onClose={() => setDuelsOpen(false)} />}
+      <DuelSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        top={{
+          label: 'Race someone’s ghost',
+          title: 'Duel',
+          caption: fuelCost ? `${fuelCost} Fuel · points on the line` : 'Points on the line',
+          // Opens under the sheet, which then flies off the top to reveal it.
+          onPick: () => setDuelsOpen(true),
+        }}
+        bottom={{
+          label: 'Or just run',
+          title: 'Solo',
+          caption: keepPrivate ? 'Private · always pays, never costs' : 'Always pays, never costs',
+          onPick: () => run.start({ private: keepPrivate }),
+        }}
+      />
     </div>
   )
 }

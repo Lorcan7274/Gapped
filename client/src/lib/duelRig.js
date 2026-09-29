@@ -19,8 +19,14 @@ const WAVE_MODES = [[0.055, 1.0], [0.11, 0.52], [0.19, 0.3], [0.31, 0.16]]
 const frameDt = (now, last) => Math.min(0.032, Math.max(0.001, (now - last) / 1000))
 
 export class DuelRig {
-  constructor(onHidden) {
+  /**
+   * onHidden: the sheet has left the screen.
+   * onCover(state): 'rising' | 'covered' | false — what the sheet hides, so
+   * the page can stop painting what nobody can see (see DuelSheet).
+   */
+  constructor(onHidden, onCover) {
     this.onHidden = onHidden
+    this.onCover = onCover
     this.el = { sheet: null, black: null, wave: null, bottom: null, cancel: null, wash: null }
     this.active = false
     this._y = 0; this._v = 0; this._raf = null
@@ -47,7 +53,8 @@ export class DuelRig {
     // Rise fully black; the seam pours in afterwards.
     this._sy = h * 1.02; this._sv = 0; this.applySeam()
     this._wy = 0; this._wv = 0; this._washHid = false; this.applyWash()
-    this.springTo(0, 110, 12)
+    this.onCover?.('rising')
+    this.springTo(0, 110, 12, () => this.active && this.onCover?.('covered'))
     clearTimeout(this._seamT)
     this._seamT = setTimeout(() => this.seamSpring(), 120)
   }
@@ -55,6 +62,7 @@ export class DuelRig {
   hide() {
     if (!this.active) return
     this.active = false
+    this.onCover?.(false)
     this.onHidden?.()
   }
 
@@ -104,6 +112,8 @@ export class DuelRig {
 
   /** Fling the whole sheet off the top, back to Home. */
   wipe() {
+    // Home is about to show again from the bottom up: bring it back first.
+    this.onCover?.(false)
     this.springTo(-this.sheetH() * 1.2, 60, 16, () => this.hide())
   }
 
