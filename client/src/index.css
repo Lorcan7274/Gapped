@@ -327,117 +327,6 @@ html[data-theme='dark'] .rank-glass {
   to   { transform: translate(48px, 34px) scale(1.14); }
 }
 
-/* ----------------------------------------------------------- duel sheet
-   Geometry only; every frame of motion is written by lib/duelRig.js. */
-
-.duel-sheet__body {
-  position: absolute;
-  inset: 0;
-  transform: translateY(120%);
-  will-change: transform;
-  user-select: none;
-  -webkit-user-select: none;
-}
-.duel-sheet__title {
-  font-size: 30px;
-  font-weight: 900;
-  letter-spacing: -0.03em;
-  text-transform: uppercase;
-}
-.duel-sheet__friend {
-  position: absolute;
-  inset: 30% 0 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 150px 0 90px;
-  background: var(--color-paper);
-  color: var(--color-ink);
-}
-.duel-sheet__random {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  will-change: transform;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding-top: 36px;
-  background: var(--color-ink);
-  color: var(--color-paper);
-}
-/* The dome that leads the black up as it rises. */
-.duel-sheet__random::before {
-  content: '';
-  position: absolute;
-  left: -12%;
-  right: -12%;
-  top: -44px;
-  height: 88px;
-  border-radius: 50%;
-  background: var(--color-ink);
-}
-.duel-sheet__random > * { position: relative; }
-.duel-sheet__wave {
-  position: absolute !important;
-  left: 0;
-  right: 0;
-  bottom: -38px;
-  width: 100%;
-  height: 40px;
-  overflow: visible;
-  pointer-events: none;
-  fill: var(--color-ink);
-}
-.duel-sheet__bleed {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 150px;
-  pointer-events: none;
-  background: radial-gradient(130% 100% at 50% 100%, rgba(207, 95, 130, 0.5), rgba(164, 63, 94, 0.16) 45%, rgba(164, 63, 94, 0) 72%);
-  animation: bleed-pulse 2.6s ease-in-out infinite alternate;
-}
-.duel-sheet__cancel {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 40px 0 calc(34px + env(safe-area-inset-bottom));
-  color: var(--color-garnet);
-  cursor: grab;
-  touch-action: none;
-}
-.duel-sheet__chevron {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  animation: swipe-bob 1.6s ease-in-out infinite;
-}
-@keyframes bleed-pulse {
-  from { opacity: 0.65; }
-  to   { opacity: 1; }
-}
-@keyframes swipe-bob {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-4px); }
-}
-
 /* ----------------------------------------------------------------- onboarding
    The signed-out flow is its own world: committed near-black, lit by aurora
    gradients, with the crystal centre stage. It ignores the paper/ink theme on
@@ -781,7 +670,7 @@ html[data-theme='dark'] .rank-glass {
 @media (prefers-reduced-motion: reduce) {
   .gem, .gem__gleam, .gem__shadow, .toast-in, .stage-in,
   .gemfx--twinkle, .gemfx--arc, .gemfx--beam, .ob-caret,
-  .rank-bg__ember, .duel-sheet__bleed, .duel-sheet__chevron {
+  .rank-bg__ember {
     animation: none;
   }
   .gem,
