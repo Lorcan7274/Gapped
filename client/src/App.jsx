@@ -5,7 +5,6 @@ import Home from './pages/Home.jsx'
 import Battle from './pages/Battle.jsx'
 import Running from './pages/Running.jsx'
 import Profile from './pages/Profile.jsx'
-import ThemeToggle from './components/ThemeToggle.jsx'
 import ChallengeSheet from './components/ChallengeSheet.jsx'
 import ResultSheet from './components/ResultSheet.jsx'
 import RankBackground from './components/RankBackground.jsx'
@@ -94,12 +93,9 @@ export default function App() {
             <GearIcon />
           </button>
         ) : (
-          <span className="label-13 label text-ink">Gapped</span>
+          <span className="label-13 label flex h-10 items-center text-ink">Gapped</span>
         )}
-        <div className="flex items-center gap-3">
-          <ConnectionStatus status={connection} />
-          <ThemeToggle className="-my-2" />
-        </div>
+        <ConnectionStatus status={connection} />
       </header>
 
       <main className="relative flex flex-1 flex-col pb-[92px]">
