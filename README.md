@@ -9,9 +9,14 @@ between you and your opponent, green when you lead and garnet when you trail.
 Win and your rating climbs. That is the whole game.
 
 <p align="center">
-  <img src="docs/screens/battle.png" width="30%" alt="A live duel: the gap in metres, updating as you run" />
-  <img src="docs/screens/home.png" width="30%" alt="Home: rating, tier, nemesis, and a duel to pick" />
-  <img src="docs/screens/join-dark.png" width="30%" alt="The welcome screen in the dark theme" />
+  <img src="docs/screens/home.png" width="30%" alt="The Run tab on the Sapphire background: this week's points, Shards, Fuel and streak, and a challenge waiting for a reply" />
+  <img src="docs/screens/duel-run.png" width="30%" alt="A duel in progress: a 3D map with you and the ghost on your route, and the gap in metres, green while you lead" />
+  <img src="docs/screens/duels.png" width="30%" alt="Duels: a challenge to reply to, ghosts to race, a duel waiting on the other runner, and results" />
+</p>
+<p align="center">
+  <img src="docs/screens/start-run.png" width="30%" alt="Start run opens the split sheet: Duel on top, Solo below" />
+  <img src="docs/screens/you.png" width="30%" alt="The You tab: Shards, lifetime distance, runs, streak, and twelve weeks of distance" />
+  <img src="docs/screens/welcome.png" width="30%" alt="The signed-out welcome screen" />
 </p>
 
 ## What it does
